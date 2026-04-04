@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" role="img" aria-labelledby="title desc">
+  <title id="title">再漫画 Logo</title>
+  <desc id="desc">带有书页和下载箭头的圆角标志</desc>
+  <defs>
+    <linearGradient id="bg" x1="0%" x2="100%" y1="0%" y2="100%">
+      <stop offset="0%" stop-color="#22c55e" />
+      <stop offset="100%" stop-color="#14b8a6" />
+    </linearGradient>
+  </defs>
+  <rect width="240" height="240" rx="56" fill="#0f172a" />
+  <rect x="20" y="20" width="200" height="200" rx="44" fill="url(#bg)" opacity="0.18" />
+  <path d="M76 62c-11 0-20 9-20 20v82c0 11 9 20 20 20h36c9 0 18 3 26 9l6 5 6-5c8-6 17-9 26-9h8c11 0 20-9 20-20V82c0-11-9-20-20-20h-22c-7 0-14 2-20 6l-18 12-18-12c-6-4-13-6-20-6H76Z" fill="#f8fafc" />
+  <path d="M120 82v90" stroke="#0f172a" stroke-linecap="round" stroke-width="10" />
+  <path d="M98 110h-20m20 24h-20m64-24h22m-22 24h22" stroke="#14b8a6" stroke-linecap="round" stroke-width="8" />
+  <path d="M120 146v30m0 0-15-15m15 15 15-15" fill="none" stroke="#0f172a" stroke-linecap="round" stroke-linejoin="round" stroke-width="12" />
+</svg>

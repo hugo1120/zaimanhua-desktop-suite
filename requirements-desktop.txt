@@ -1,0 +1,14 @@
+# zaimanhua-desktop-suite/requirements-desktop.txt
+fastapi>=0.110,<1
+uvicorn[standard]>=0.29,<1
+httpx>=0.27,<1
+requests>=2.31,<3
+pywebview>=5.0,<6
+pyinstaller>=6.5,<7
+pywinstyles
+jinja2
+python-multipart
+beautifulsoup4
+lxml
+pillow
+python-dotenv
