@@ -10,6 +10,7 @@ from zaimanhua.backend.core.paths import get_project_root
 from zaimanhua.backend.events.bus import EventBus
 from zaimanhua.backend.schemas.crawler import CrawlerStatusResponse
 from zaimanhua.backend.schemas.common import OperationResponse
+from zaimanhua.core.desktop_debug import desktop_log
 
 
 def _create_crawler(callback: Any, stop_event: threading.Event) -> Any:
@@ -65,6 +66,7 @@ class CrawlerService:
                 raise HTTPException(status_code=409, detail="索引更新正在进行中")
             self._stop_event = threading.Event()
             self._last_message = f"启动 {start_id}-{end_id}"
+            desktop_log("backend.crawler", "start_requested", start_id=start_id, end_id=end_id)
             crawler = _create_crawler(self._on_progress, self._stop_event)
             self._thread = threading.Thread(
                 target=self._run_crawler, args=(crawler, start_id, end_id), daemon=True
@@ -77,14 +79,37 @@ class CrawlerService:
     def _on_progress(self, value: str | None) -> None:
         with self._lock:
             self._last_message = str(value or "")
+        desktop_log("backend.crawler", "progress", message=self._last_message)
         self._publish_status()
 
     def _run_crawler(self, crawler: Any, start_id: int, end_id: int) -> None:
+        startup_message = f"启动 {start_id}-{end_id}"
         try:
             crawler.run(start_id, end_id)
+        except BaseException as exc:
+            with self._lock:
+                self._last_message = f"爬虫错误: {exc}"
+            desktop_log(
+                "backend.crawler",
+                "run_failed",
+                start_id=start_id,
+                end_id=end_id,
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
         finally:
             with self._lock:
+                if self._last_message == startup_message:
+                    self._last_message = "索引任务已结束，但未收到任何进度回调"
                 self._thread = None
+                final_message = self._last_message
+            desktop_log(
+                "backend.crawler",
+                "run_finished",
+                start_id=start_id,
+                end_id=end_id,
+                message=final_message,
+            )
             self._publish_status(self._build_status(running=False))
 
     def stop(self) -> OperationResponse:

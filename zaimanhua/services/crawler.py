@@ -7,7 +7,7 @@ import time
 
 import requests
 
-from zaimanhua.core.runtime import CRAWLER_MAX_WORKERS, CRAWLER_SAVE_INTERVAL, MANGA_LIST_FILE
+from zaimanhua.core.crawler_runtime import CRAWLER_MAX_WORKERS, CRAWLER_SAVE_INTERVAL, MANGA_LIST_FILE
 from zaimanhua.services.api import CustomSSLAdapter
 
 class MangaCrawler:
@@ -16,12 +16,16 @@ class MangaCrawler:
     def __init__(self, callback=None, stop_event=None):
         self.base_url = 'https://v4api.zaimanhua.com/app/v1'
         self.session = requests.Session()
+        self.session.trust_env = False
         self.session.mount('https://', CustomSSLAdapter())
         self.session.headers.update({'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36', 'Accept': 'application/json'})
         self.existing_data = {}
         self.new_data = []
         self.lock = threading.Lock()
         self.processed_count = 0
+        self.discovered_count = 0
+        self.request_error_count = 0
+        self.first_request_error = ''
         self.callback = callback
         self.stop_event = stop_event or threading.Event()
 
@@ -62,17 +66,21 @@ class MangaCrawler:
             if res.status_code == 200:
                 data = res.json()
                 if data.get('errno') == 0:
-                    d = data['data']['data']
+                    payload = data.get('data') or {}
+                    d = payload.get('data') or {}
                     title = d.get('title')
                     authors = []
-                    for a in d.get('authors', []):
+                    for a in d.get('authors') or []:
                         if 'tag_name' in a:
                             authors.append(a['tag_name'])
                     author_str = ','.join(authors)
                     if title:
                         return (title, author_str)
-        except:
-            pass
+        except Exception as exc:
+            with self.lock:
+                self.request_error_count += 1
+                if not self.first_request_error:
+                    self.first_request_error = f'{type(exc).__name__}: {exc}'
         return (None, None)
 
     def worker(self, manga_id):
@@ -89,6 +97,7 @@ class MangaCrawler:
                     self.callback(msg)
             if title:
                 print(f'发现: ID {manga_id} -> {title} [{author}]')
+                self.discovered_count += 1
                 self.new_data.append({'ID': manga_id, 'Title': title, 'Author': author})
                 if len(self.new_data) >= CRAWLER_SAVE_INTERVAL:
                     self.save_to_txt()
@@ -153,7 +162,15 @@ class MangaCrawler:
         finally:
             self.save_to_txt()
             elapsed = time.time() - start_time
-            msg = f'任务结束！耗时: {elapsed:.2f}秒'
+            if self.stop_event.is_set():
+                msg = f'索引更新已停止！耗时: {elapsed:.2f}秒'
+            elif self.discovered_count == 0 and self.request_error_count > 0:
+                msg = (
+                    f'索引更新失败: 共 {self.request_error_count} 次请求异常，'
+                    f'首个错误: {self.first_request_error}'
+                )
+            else:
+                msg = f'任务结束！耗时: {elapsed:.2f}秒'
             print(msg)
             if self.callback:
                 self.callback(msg)

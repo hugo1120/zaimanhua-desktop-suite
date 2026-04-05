@@ -5,7 +5,7 @@ a = Analysis(
     ['main_desktop.py'],
     pathex=[],
     binaries=[],
-    datas=[('app.ico', '.'), ('zaimanhua', 'zaimanhua'), ('ui_web/frontend/dist', 'ui_web/frontend/dist'), ('favicon.ico', '.')],
+    datas=[('app.ico', '.'), ('manga_list.txt', '.'), ('zaimanhua', 'zaimanhua'), ('ui_web/frontend/dist', 'ui_web/frontend/dist'), ('favicon.ico', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

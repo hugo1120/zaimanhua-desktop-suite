@@ -125,4 +125,43 @@ describe("SettingsPage", () => {
       expect(screen.getByText("进度: 10/100")).toBeInTheDocument();
     });
   });
+
+  test("shows crawler start error feedback", async () => {
+    const user = userEvent.setup();
+
+    (settingsApi.fetchSettings as any).mockResolvedValue({
+      username: "hugo",
+      has_token: true,
+      max_books: 2,
+      max_images: 8,
+      download_dir: "D:/downloads",
+    });
+    (crawlerApi.fetchCrawlerStatus as any).mockResolvedValue({
+      running: false,
+      last_message: "",
+      max_known_id: 1234,
+    });
+    (crawlerApi.startCrawler as any).mockRejectedValue(new Error("启动失败"));
+    (crawlerApi.stopCrawler as any).mockResolvedValue({
+      ok: true,
+      message: "已停止索引更新",
+    });
+    (eventsApi.connectEvents as any).mockImplementation(() => ({ close: () => undefined }));
+
+    render(
+      <AppProviders>
+        <SettingsPage />
+      </AppProviders>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "启动索引更新" })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: "启动索引更新" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("启动失败")).toBeInTheDocument();
+    });
+  });
 });

@@ -17,6 +17,7 @@ export function SettingsPage() {
   const [endId, setEndId] = useState("1");
   const [crawlerStatus, setCrawlerStatus] = useState<CrawlerStatus | null>(null);
   const [feedback, setFeedback] = useState("");
+  const [crawlerError, setCrawlerError] = useState("");
 
   const settingsQuery = useQuery({ queryKey: ["settings"], queryFn: fetchSettings });
   const updateMutation = useMutation({
@@ -25,8 +26,23 @@ export function SettingsPage() {
   });
 
   const crawlerQuery = useQuery({ queryKey: ["crawler", "status"], queryFn: fetchCrawlerStatus, refetchInterval: 2000 });
-  const startMutation = useMutation({ mutationFn: (a: { start_id: number; end_id: number }) => startCrawler(a), onSuccess: (d) => setCrawlerStatus(d) });
-  const stopMutation = useMutation({ mutationFn: stopCrawler, onSuccess: (d) => setCrawlerStatus({ running: false, last_message: d.message, max_known_id: crawlerStatus?.max_known_id || 0 }) });
+  const startMutation = useMutation({
+    mutationFn: (a: { start_id: number; end_id: number }) => startCrawler(a),
+    onSuccess: (d) => {
+      setCrawlerError("");
+      setCrawlerStatus(d);
+    },
+    onError: (error: unknown) => {
+      setCrawlerError(error instanceof Error ? error.message : "启动索引更新失败");
+    },
+  });
+  const stopMutation = useMutation({
+    mutationFn: stopCrawler,
+    onSuccess: (d) => {
+      setCrawlerError("");
+      setCrawlerStatus({ running: false, last_message: d.message, max_known_id: crawlerStatus?.max_known_id || 0 });
+    },
+  });
 
   useEffect(() => {
     if (settingsQuery.data) {
@@ -48,6 +64,7 @@ export function SettingsPage() {
   useEffect(() => {
     const socket = connectEvents((e) => {
       if (e.type === "crawler.progress" && isCrawlerStatus(e.payload)) {
+        setCrawlerError("");
         setCrawlerStatus(e.payload);
         const mid = e.payload.max_known_id || 1;
         setStartId(String(mid));
@@ -64,6 +81,7 @@ export function SettingsPage() {
       </div>
 
       {feedback && <Alert color="teal" variant="light" mb="xl" withCloseButton onClose={() => setFeedback("")}>{feedback}</Alert>}
+      {crawlerError && <Alert color="red" variant="light" mb="xl" withCloseButton onClose={() => setCrawlerError("")}>{crawlerError}</Alert>}
 
       <Stack gap="xl">
         <div className="settings-group">

@@ -82,13 +82,14 @@ class ZaimanhuaAPI:
             if res.status_code == 200:
                 data = res.json()
                 if data.get('errno') == 0:
-                    for item in data['data']['data']:
+                    payload = data.get('data') or {}
+                    for item in payload.get('data') or []:
                         title = item.get('title')
                         mid = str(item.get('comic_id'))
                         cover = item.get('cover')
-                        authors = [a.get('tag_name') for a in item.get('authors', [])]
+                        authors = [a.get('tag_name') for a in (item.get('authors') or []) if isinstance(a, dict)]
                         author_str = ','.join(authors) if authors else ''
-                        status_text = self.get_status_label(item.get('status', [])) or ''
+                        status_text = self.get_status_label(item.get('status') or []) or ''
                         if title and mid:
                             results.append({
                                 'title': title,

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import concurrent.futures
 import os
-import sys
 import threading
 import tkinter as tk
 import urllib3
@@ -10,18 +9,19 @@ import warnings
 
 import customtkinter as ctk
 from PIL import Image, ImageTk
+from zaimanhua.core.crawler_runtime import (
+    BUNDLE_DIR,
+    CRAWLER_MAX_WORKERS,
+    CRAWLER_SAVE_INTERVAL,
+    MANGA_LIST_FILE,
+    MANGA_LIST_FILE_BUNDLE,
+    SCRIPT_DIR,
+)
 
 ctk.set_appearance_mode("System")
 ctk.set_default_color_theme("blue")
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 warnings.filterwarnings("ignore", category=DeprecationWarning)
-
-if getattr(sys, "frozen", False):
-    SCRIPT_DIR = os.path.dirname(sys.executable)
-    BUNDLE_DIR = getattr(sys, "_MEIPASS", SCRIPT_DIR)
-else:
-    SCRIPT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    BUNDLE_DIR = SCRIPT_DIR
 
 CONFIG_FILE = os.path.join(SCRIPT_DIR, "config.json")
 LIBRARY_CACHE_FILE = os.path.join(SCRIPT_DIR, "library_cache.json")
@@ -30,10 +30,6 @@ COMPLETED_DIR = os.path.join(SCRIPT_DIR, "已完结")
 CACHE_DIR = os.path.join(SCRIPT_DIR, "cache")
 RECENT_UPDATES_CACHE_FILE = os.path.join(CACHE_DIR, "recent_updates_page1.json")
 RECENT_COVER_CACHE_DIR = os.path.join(CACHE_DIR, "recent_covers")
-MANGA_LIST_FILE = os.path.join(SCRIPT_DIR, "manga_list.txt")
-MANGA_LIST_FILE_BUNDLE = os.path.join(BUNDLE_DIR, "manga_list.txt")
-CRAWLER_MAX_WORKERS = 20
-CRAWLER_SAVE_INTERVAL = 100
 ICON_FILE_NAME = "favicon.ico"
 IMAGE_LOADER = concurrent.futures.ThreadPoolExecutor(max_workers=8)
 RECENT_IMAGE_LOADER = concurrent.futures.ThreadPoolExecutor(max_workers=6)

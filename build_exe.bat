@@ -35,10 +35,13 @@ if exist "dist" rmdir /s /q "dist"
     --contents-directory "internal" ^
     %ICON_CMD% ^
     %ICON_DATA_CMD% ^
+    --add-data "manga_list.txt;." ^
     --add-data "zaimanhua;zaimanhua" ^
     --add-data "ui_web/frontend/dist;ui_web/frontend/dist" ^
     --add-data "favicon.ico;." ^
     main_desktop.py || goto :error
+
+copy /Y "manga_list.txt" "dist\hugo-zaimanhua\manga_list.txt" >nul || goto :error
 
 echo [4/4] Done! 
 echo Check your clean executable folder in: zaimanhua-desktop-suite\dist\hugo-zaimanhua\
