@@ -1,14 +1,30 @@
 from __future__ import annotations
 
+import time
+from collections.abc import Callable
 from typing import Any
 
 from zaimanhua.backend.schemas.recent_updates import RecentUpdateItem, RecentUpdatesResponse
 
+DEFAULT_RECENT_UPDATES_CACHE_TTL_SECONDS = 60.0
+
 
 class RecentUpdatesService:
-    def __init__(self, api: Any):
+    def __init__(
+        self,
+        api: Any,
+        *,
+        time_fn: Callable[[], float] | None = None,
+        cache_ttl_seconds: float = DEFAULT_RECENT_UPDATES_CACHE_TTL_SECONDS,
+    ):
         self._api = api
-        self._page_cache: dict[int, list[RecentUpdateItem]] = {}
+        self._time_fn = time_fn or time.time
+        try:
+            normalized_ttl = float(cache_ttl_seconds)
+        except (TypeError, ValueError):
+            normalized_ttl = DEFAULT_RECENT_UPDATES_CACHE_TTL_SECONDS
+        self._cache_ttl_seconds = max(normalized_ttl, 0.0)
+        self._page_cache: dict[int, tuple[float, list[RecentUpdateItem]]] = {}
 
     @staticmethod
     def _build_item(raw: dict[str, Any]) -> RecentUpdateItem:
@@ -30,15 +46,25 @@ class RecentUpdatesService:
         if page_number < 1:
             page_number = 1
 
-        if refresh and page_number in self._page_cache:
-            del self._page_cache[page_number]
+        if refresh:
+            self._page_cache.clear()
 
-        if page_number not in self._page_cache:
+        cached_entry = self._page_cache.get(page_number)
+        now = float(self._time_fn())
+        cache_expired = True
+        if cached_entry is not None:
+            cached_at, _ = cached_entry
+            cache_expired = (now - cached_at) >= self._cache_ttl_seconds
+
+        if cached_entry is None or cache_expired:
             rows = self._api.get_recent_updates(page_number) or []
-            self._page_cache[page_number] = [
-                self._build_item(row)
-                for row in rows
-                if isinstance(row, dict)
-            ]
+            self._page_cache[page_number] = (
+                now,
+                [
+                    self._build_item(row)
+                    for row in rows
+                    if isinstance(row, dict)
+                ],
+            )
 
-        return RecentUpdatesResponse(page=page_number, items=self._page_cache[page_number])
+        return RecentUpdatesResponse(page=page_number, items=self._page_cache[page_number][1])

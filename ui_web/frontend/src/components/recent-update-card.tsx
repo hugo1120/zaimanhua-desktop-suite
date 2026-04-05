@@ -48,12 +48,19 @@ export function RecentUpdateCard(props: {
           <Text className="poster-card__meta-left" c="dimmed" span>
             {item.author || "未知作者"}
           </Text>
-          {item.time ? (
+          {item.status ? (
             <Text className="poster-card__meta-right" c="dimmed" span>
-              {item.time}
+              {item.status}
             </Text>
           ) : null}
         </div>
+        {item.time ? (
+          <div className="poster-card__meta">
+            <Text c="dimmed" size="xs" span>
+              {item.time}
+            </Text>
+          </div>
+        ) : null}
       </div>
     </Card>
   );
