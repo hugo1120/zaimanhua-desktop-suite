@@ -14,7 +14,8 @@ from zaimanhua.core.desktop_debug import (
     desktop_log,
     get_default_desktop_debug_path,
 )
-from zaimanhua.core.desktop_runtime import stabilize_window_display, wait_for_tcp_port
+from zaimanhua.core.desktop_api import DesktopApi
+from zaimanhua.core.desktop_runtime import stabilize_window_display, wait_for_tcp_port, wait_for_window_handle
 from zaimanhua.core.desktop_runtime import build_webview_start_kwargs
 from zaimanhua.core.frontend_bundle import resolve_frontend_file
 from zaimanhua.core.windows_icon import apply_window_icon_from_file
@@ -115,31 +116,6 @@ def start_server(port, stop_event):
     loop.close()
     desktop_log("desktop.server", "stopped", port=port)
 
-class Api:
-    def __init__(self, window=None, settings_service: SettingsService | None = None):
-        self.window = window
-        self.settings_service = settings_service
-
-    def set_theme(self, is_dark: bool):
-        desktop_log("desktop.api", "set_theme_called", is_dark=is_dark)
-        if self.settings_service is not None:
-            theme_mode = self.settings_service.set_theme_mode("dark" if is_dark else "light")
-            desktop_log("desktop.api", "theme_mode_persisted", theme_mode=theme_mode)
-        if self.window and self.window.native:
-            try:
-                hwnd = wait_for_window_handle(self.window, timeout_seconds=2.0)
-                desktop_log("desktop.api", "set_theme_target", hwnd=hwnd, is_dark=is_dark)
-                apply_window_titlebar_theme(hwnd, is_dark)
-                desktop_log("desktop.api", "set_theme_applied", hwnd=hwnd, is_dark=is_dark)
-            except Exception as e:
-                desktop_log("desktop.api", "set_theme_failed", error=str(e), error_type=type(e).__name__)
-
-    def log_debug(self, component: str, event: str, payload=None):
-        if isinstance(payload, dict):
-            desktop_log(component, event, **payload)
-        else:
-            desktop_log(component, event, payload=payload)
-
 def main():
     port = get_free_port()
     stop_event = threading.Event()
@@ -158,7 +134,12 @@ def main():
         desktop_log("desktop.server", "ready_wait_failed", port=port, error=str(e), error_type=type(e).__name__)
         raise
     
-    api = Api(settings_service=settings_service)
+    api = DesktopApi(
+        settings_service=settings_service,
+        desktop_log_fn=desktop_log,
+        wait_for_window_handle_fn=wait_for_window_handle,
+        apply_window_titlebar_theme_fn=apply_window_titlebar_theme,
+    )
     window = webview.create_window(
         "hugoの再漫画下载器", 
         f"http://127.0.0.1:{port}",
@@ -168,7 +149,7 @@ def main():
         background_color="#0a0a0c" if initial_is_dark else "#ffffff",
     )
     desktop_log("desktop.window", "created", port=port, title="hugoの再漫画下载器")
-    api.window = window
+    api._window = window
 
     def watch_titlebar_theme(hwnd, seed_is_dark: bool):
         failure_count = 0
