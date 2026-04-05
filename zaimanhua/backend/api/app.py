@@ -3,13 +3,16 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
+from zaimanhua.core.desktop_debug import desktop_log
 from zaimanhua.backend.api.dependencies import BackendContainer
 from zaimanhua.backend.api.routes.auth import router as auth_router
 from zaimanhua.backend.api.routes.covers import router as covers_router
 from zaimanhua.backend.api.routes.crawler import router as crawler_router
+from zaimanhua.backend.api.routes.debug import router as debug_router
 from zaimanhua.backend.api.routes.downloads import router as downloads_router
 from zaimanhua.backend.api.routes.library import router as library_router
 from zaimanhua.backend.api.routes.library_actions import router as library_actions_router
@@ -32,6 +35,19 @@ async def _app_lifespan(app: FastAPI):
 
 def create_app(config_path: str | None = None, api_client: Any | None = None) -> FastAPI:
     app = FastAPI(title="Zaimanhua Web Backend", lifespan=_app_lifespan)
+
+    class RequestDebugMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request: Request, call_next):
+            path = request.url.path
+            if path in {"/", "/theme-bootstrap.js", "/assets/main.js", "/api/auth/session", "/api/auth/login"}:
+                desktop_log("backend.http", "request", method=request.method, path=path)
+            response = await call_next(request)
+            if path in {"/", "/theme-bootstrap.js", "/assets/main.js", "/api/auth/session", "/api/auth/login"}:
+                desktop_log("backend.http", "response", method=request.method, path=path, status_code=response.status_code)
+            return response
+
+    app.add_middleware(RequestDebugMiddleware)
+
     # Allow localhost origins on typical dev port range
     cors_origins = []
     for port in range(5173, 5183):
@@ -53,6 +69,7 @@ def create_app(config_path: str | None = None, api_client: Any | None = None) ->
     app.include_router(recent_updates_router, prefix="/api")
     app.include_router(downloads_router, prefix="/api")
     app.include_router(crawler_router, prefix="/api")
+    app.include_router(debug_router, prefix="/api")
     app.include_router(websocket_router)
     app.include_router(covers_router, prefix="/api")
     return app

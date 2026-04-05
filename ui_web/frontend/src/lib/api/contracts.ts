@@ -103,6 +103,17 @@ export interface LibraryResponse {
   source: string;
 }
 
+export interface LibrarySmartUpdateResponse {
+  ok: boolean;
+  message: string;
+  items: LibraryItem[];
+  scanned_pages: number;
+  recent_total: number;
+  matched_total: number;
+  candidate_total: number;
+  missing_id_total: number;
+}
+
 export interface CrawlerStatusResponse {
   running: boolean;
   last_message: string;

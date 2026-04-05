@@ -11,6 +11,7 @@ import * as downloadsApi from "../../lib/api/downloads";
 vi.mock("../../lib/api/library", () => ({
   fetchLibrary: vi.fn(),
   refreshLibrary: vi.fn(),
+  smartUpdateLibrary: vi.fn(),
   repairLibraryMetadata: vi.fn(),
   openLibraryFolder: vi.fn(),
 }));
@@ -40,8 +41,7 @@ describe("LibraryPage", () => {
     vi.resetAllMocks();
   });
 
-  test("filters library items, refreshes library and can add download", async () => {
-    const user = userEvent.setup();
+  test("页面挂载时仅拉取 fetchLibrary，不自动触发 refreshLibrary，并展示缓存提示", async () => {
     const listLibraryApi = vi.fn().mockResolvedValue({
       items: [
         {
@@ -68,47 +68,29 @@ describe("LibraryPage", () => {
       total: 2,
       source: "cache",
     });
-    const refreshLibraryApi = vi.fn().mockResolvedValue({
-      items: [
-        {
-          id: "43",
-          title: "Another Demo",
-          path: "D:/downloads/Another Demo",
-          author: "作者乙",
-          status: "已完结",
-          description: "",
-          cover_path: "cover.jpg",
-          mtime: 3000,
-        },
-      ],
-      total: 1,
+
+    (libraryApi.fetchLibrary as any).mockImplementation(listLibraryApi);
+    (libraryApi.refreshLibrary as any).mockResolvedValue({
+      items: [],
+      total: 0,
       source: "scan",
     });
-    const addDownloadApi = vi.fn().mockResolvedValue({
+    (libraryApi.repairLibraryMetadata as any).mockResolvedValue({
       ok: true,
-      message: "已加入下载队列",
-    });
-    const repairMetadataApi = vi.fn().mockResolvedValue({
-      ok: true,
-      message: "已补全 1 个目录",
-      scanned: 1,
-      fixed: 1,
+      message: "已补全 0 个目录",
+      scanned: 0,
+      fixed: 0,
       skipped: 0,
     });
-    const fetchMangaDetailApi = vi.fn().mockResolvedValue({
+    (downloadsApi.addDownload as any).mockResolvedValue({ ok: true, message: "已加入下载队列" });
+    (mangaApi.fetchMangaDetail as any).mockResolvedValue({
       id: "42",
       title: "[A] Demo Manga",
-      description: "Demo Description",
+      description: "",
       author: "作者甲",
       status: "连载中",
       cover_url: "",
     });
-
-    (libraryApi.fetchLibrary as any).mockImplementation(listLibraryApi);
-    (libraryApi.refreshLibrary as any).mockImplementation(refreshLibraryApi);
-    (libraryApi.repairLibraryMetadata as any).mockImplementation(repairMetadataApi);
-    (downloadsApi.addDownload as any).mockImplementation(addDownloadApi);
-    (mangaApi.fetchMangaDetail as any).mockImplementation(fetchMangaDetailApi);
 
     render(
       <AppProviders>
@@ -116,47 +98,122 @@ describe("LibraryPage", () => {
       </AppProviders>,
     );
 
-    // 由于 React Query 会在第一次渲染就执行，可能需要等待 initial render
-    await waitFor(() => {
-      expect(libraryApi.fetchLibrary).toHaveBeenCalled();
-    });
-
-    // 实际上 MangaDescriptionHover 显示的是 text
     expect(await screen.findByText("[A] Demo Manga", {}, { timeout: 3000 })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "A" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "0-9" })).toBeInTheDocument();
 
-    await user.type(screen.getByPlaceholderText("搜索库中作品..."), "demo");
-    await user.keyboard("{Enter}");
+    expect(libraryApi.fetchLibrary).toHaveBeenCalledTimes(1);
+    expect(libraryApi.fetchLibrary).toHaveBeenCalledWith("");
+    expect(libraryApi.refreshLibrary).not.toHaveBeenCalled();
+    expect(screen.getByText(/当前显示缓存，未校验磁盘/i)).toBeInTheDocument();
+  });
 
-    await waitFor(() => {
-      expect(libraryApi.fetchLibrary).toHaveBeenLastCalledWith("demo");
+  test("智能更新只入队候选作品，候选为空时提示无可更新作品", async () => {
+    const user = userEvent.setup();
+    const libraryItems = [
+      {
+        id: "1001",
+        title: "候选漫画 1",
+        path: "D:/downloads/candidate-1",
+        author: "作者甲",
+        status: "连载中",
+        description: "",
+        cover_path: "cover-1.jpg",
+        mtime: 100,
+      },
+      {
+        id: "1002",
+        title: "候选漫画 2",
+        path: "D:/downloads/candidate-2",
+        author: "作者乙",
+        status: "连载中",
+        description: "",
+        cover_path: "cover-2.jpg",
+        mtime: 200,
+      },
+      {
+        id: "1003",
+        title: "非候选漫画",
+        path: "D:/downloads/non-candidate",
+        author: "作者丙",
+        status: "连载中",
+        description: "",
+        cover_path: "cover-3.jpg",
+        mtime: 300,
+      },
+    ];
+
+    (libraryApi.fetchLibrary as any).mockResolvedValue({
+      items: libraryItems,
+      total: libraryItems.length,
+      source: "cache",
+    });
+    (libraryApi.refreshLibrary as any).mockResolvedValue({
+      items: libraryItems,
+      total: libraryItems.length,
+      source: "scan",
+    });
+    (libraryApi.repairLibraryMetadata as any).mockResolvedValue({
+      ok: true,
+      message: "已补全 0 个目录",
+      scanned: 0,
+      fixed: 0,
+      skipped: 0,
+    });
+    (libraryApi.smartUpdateLibrary as any)
+      .mockResolvedValueOnce({
+        items: [libraryItems[0], libraryItems[1]],
+        scanned_pages: 3,
+        recent_total: 50,
+        matched_total: 2,
+        candidate_total: 2,
+        missing_id_total: 0,
+        message: "命中 2 本可更新作品",
+      })
+      .mockResolvedValueOnce({
+        items: [],
+        scanned_pages: 3,
+        recent_total: 50,
+        matched_total: 0,
+        candidate_total: 0,
+        missing_id_total: 0,
+        message: "最近更新未命中本地书库或本地已是最新",
+      });
+    (downloadsApi.addDownload as any).mockResolvedValue({ ok: true, message: "已加入下载队列" });
+    (mangaApi.fetchMangaDetail as any).mockResolvedValue({
+      id: "1001",
+      title: "候选漫画 1",
+      description: "",
+      author: "作者甲",
+      status: "连载中",
+      cover_url: "",
     });
 
-    await user.click(screen.getByRole("button", { name: "刷新" }));
+    render(
+      <AppProviders>
+        <LibraryPage />
+      </AppProviders>,
+    );
 
     await waitFor(() => {
-      expect(screen.getByText("Another Demo")).toBeInTheDocument();
+      expect(screen.getByText("候选漫画 1")).toBeInTheDocument();
     });
 
-    await user.click(screen.getByRole("button", { name: "更新" }));
+    await user.click(screen.getByRole("button", { name: "智能更新" }));
 
     await waitFor(() => {
-      expect(downloadsApi.addDownload).toHaveBeenCalledWith(expect.objectContaining({ id: "43", title: "Another Demo" }));
+      expect(downloadsApi.addDownload).toHaveBeenCalledTimes(2);
+      expect(libraryApi.smartUpdateLibrary).toHaveBeenCalledTimes(1);
     });
+    expect(downloadsApi.addDownload).toHaveBeenCalledWith(expect.objectContaining({ id: "1001" }));
+    expect(downloadsApi.addDownload).toHaveBeenCalledWith(expect.objectContaining({ id: "1002" }));
+    expect(downloadsApi.addDownload).not.toHaveBeenCalledWith(expect.objectContaining({ id: "1003" }));
+
+    await user.click(screen.getByRole("button", { name: "智能更新" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "已加入" })).toBeInTheDocument();
+      expect(screen.getByText("最近更新未命中本地书库或本地已是最新")).toBeInTheDocument();
     });
-
-    await user.click(screen.getByRole("button", { name: "补全" }));
-
-    await waitFor(() => {
-      expect(libraryApi.repairLibraryMetadata).toHaveBeenCalled();
-    });
-
-    // 验证更新全部按钮
-    expect(screen.getByRole("button", { name: /^更新全部/ })).toBeInTheDocument();
+    expect(libraryApi.smartUpdateLibrary).toHaveBeenCalledTimes(2);
+    expect(downloadsApi.addDownload).toHaveBeenCalledTimes(2);
   });
 
   test("sorts library by real update time before local mtime fallback", async () => {
@@ -290,7 +347,7 @@ describe("LibraryPage", () => {
     });
   });
 
-  test("批量更新全部按统计结果展示新增、重复与失败数量", async () => {
+  test("全量更新按统计结果展示新增、重复与失败数量", async () => {
     const user = userEvent.setup();
     const libraryItems = Array.from({ length: 25 }, (_, index) => ({
       id: String(index + 1),
@@ -359,7 +416,7 @@ describe("LibraryPage", () => {
       expect(screen.getByText("测试漫画 1")).toBeInTheDocument();
     });
 
-    await user.click(screen.getByRole("button", { name: /^更新全部/ }));
+    await user.click(screen.getByRole("button", { name: /^全量更新/ }));
 
     await waitFor(() => {
       expect(downloadsApi.addDownload).toHaveBeenCalledTimes(20);
@@ -385,11 +442,7 @@ describe("LibraryPage", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText("已处理 25 本：新增 23，本地已存在 1，失败 1")).toBeInTheDocument();
-    });
-
-    await waitFor(() => {
-      expect(screen.getAllByRole("button", { name: "已加入" })).toHaveLength(23);
+      expect(screen.getByText("已处理 25 本：新增 23，队列重复 1，失败 1")).toBeInTheDocument();
     });
 
     expect(invalidateQueriesSpy).toHaveBeenCalledWith({ queryKey: ["downloads", "queue"] });

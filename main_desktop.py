@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import sys
 import threading
@@ -13,7 +14,9 @@ from zaimanhua.core.desktop_debug import (
     desktop_log,
     get_default_desktop_debug_path,
 )
-from zaimanhua.core.desktop_runtime import wait_for_tcp_port, wait_for_window_handle
+from zaimanhua.core.desktop_runtime import stabilize_window_display, wait_for_tcp_port
+from zaimanhua.core.desktop_runtime import build_webview_start_kwargs
+from zaimanhua.core.frontend_bundle import resolve_frontend_file
 from zaimanhua.core.windows_icon import apply_window_icon_from_file
 from zaimanhua.core.windows_titlebar import (
     apply_window_titlebar_theme,
@@ -35,6 +38,23 @@ os.environ.setdefault("ZAIMANHUA_ROOT", APP_ROOT)
 os.environ.setdefault("ZAIMANHUA_DOWNLOAD_DIR", os.path.join(APP_ROOT, "downloads"))
 os.environ.setdefault("ZAIMANHUA_CONFIG_PATH", os.path.join(APP_ROOT, "config.json"))
 LOG_PATH = configure_desktop_debug(get_default_desktop_debug_path(APP_ROOT))
+
+
+def configure_pywebview_logger(log_path: str | Path) -> None:
+    logger = logging.getLogger("pywebview")
+    logger.setLevel(logging.DEBUG)
+
+    target = str(log_path)
+    for handler in logger.handlers:
+        if isinstance(handler, logging.FileHandler) and handler.baseFilename == target:
+            return
+
+    file_handler = logging.FileHandler(target, encoding="utf-8")
+    file_handler.setFormatter(logging.Formatter("[pywebview] %(levelname)s %(message)s"))
+    logger.addHandler(file_handler)
+
+
+configure_pywebview_logger(LOG_PATH)
 
 def log_debug(msg):
     desktop_log("desktop.message", "legacy", message=msg)
@@ -76,7 +96,10 @@ def start_server(port, stop_event):
         @app.get("/{full_path:path}")
         async def serve_frontend(full_path: str):
             if full_path.startswith("api/"): return {"error": "Not Found"}
-            return FileResponse(os.path.join(frontend_dist_path, "index.html"))
+            resolved_path = resolve_frontend_file(frontend_dist_path, full_path)
+            if resolved_path is None:
+                return {"error": "Not Found"}
+            return FileResponse(str(resolved_path))
 
     config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error", access_log=False)
     server = uvicorn.Server(config)
@@ -141,6 +164,7 @@ def main():
         f"http://127.0.0.1:{port}",
         js_api=api,
         width=1280, height=800, min_size=(1000, 700),
+        focus=True,
         background_color="#0a0a0c" if initial_is_dark else "#ffffff",
     )
     desktop_log("desktop.window", "created", port=port, title="hugoの再漫画下载器")
@@ -217,7 +241,7 @@ def main():
 
     def on_shown():
         try:
-            hwnd = wait_for_window_handle(window)
+            hwnd = stabilize_window_display(window, log_fn=desktop_log)
             desktop_log("desktop.window", "shown", hwnd=hwnd)
 
             apply_window_titlebar_theme(hwnd, initial_is_dark)
@@ -250,7 +274,9 @@ def main():
         except Exception as e:
             desktop_log("desktop.window", "shown_failed", error=str(e), error_type=type(e).__name__)
 
-    webview.start(on_shown, gui='winforms')
+    start_kwargs = build_webview_start_kwargs(gui="winforms")
+    desktop_log("desktop.webview", "start_requested", **start_kwargs)
+    webview.start(on_shown, **start_kwargs)
     stop_event.set()
     server_thread.join(timeout=5.0)
     if server_thread.is_alive():

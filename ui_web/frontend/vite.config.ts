@@ -8,6 +8,9 @@ const backendWs = `ws://127.0.0.1:${backendPort}`;
 
 export default defineConfig({
   plugins: [react()],
+  define: {
+    __ZAIMANHUA_BACKEND_ORIGIN__: JSON.stringify(process.env.VITE_BACKEND_ORIGIN || ""),
+  },
   server: {
     port: 5173,
     strictPort: false,

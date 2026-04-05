@@ -1,8 +1,16 @@
 const DEFAULT_BACKEND_ORIGIN = "http://127.0.0.1:8001";
 
+function readConfiguredBackendOrigin() {
+  if (typeof __ZAIMANHUA_BACKEND_ORIGIN__ === "string" && __ZAIMANHUA_BACKEND_ORIGIN__.trim()) {
+    return __ZAIMANHUA_BACKEND_ORIGIN__;
+  }
+
+  return undefined;
+}
+
 export function resolveBackendOrigin(
   location: Pick<Location, "protocol" | "origin"> = window.location,
-  configuredOrigin = import.meta.env.VITE_BACKEND_ORIGIN,
+  configuredOrigin = readConfiguredBackendOrigin(),
 ) {
   const envOrigin = configuredOrigin?.trim();
   if (envOrigin) {
@@ -19,7 +27,7 @@ export function resolveBackendOrigin(
 export function resolveApiUrl(
   input: string,
   location: Pick<Location, "protocol" | "origin"> = window.location,
-  configuredOrigin = import.meta.env.VITE_BACKEND_ORIGIN,
+  configuredOrigin = readConfiguredBackendOrigin(),
 ) {
   if (!input.startsWith("/")) {
     return input;
@@ -35,7 +43,7 @@ export function resolveApiUrl(
 export function resolveWebSocketUrl(
   path = "/ws/events",
   location: Pick<Location, "protocol" | "origin"> = window.location,
-  configuredOrigin = import.meta.env.VITE_BACKEND_ORIGIN,
+  configuredOrigin = readConfiguredBackendOrigin(),
 ) {
   const url = new URL(path, `${resolveBackendOrigin(location, configuredOrigin)}/`);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";

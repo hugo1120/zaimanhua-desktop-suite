@@ -5,7 +5,7 @@ from .downloads import AddDownloadRequest, DownloadQueueResponse, DownloadTaskIt
 from .recent_updates import RecentUpdateItem, RecentUpdatesResponse
 from .search import SearchResponse, SearchResultItem
 from .settings import SettingsResponse, SettingsUpdateRequest
-from .library import LibraryItem, LibraryResponse
+from .library import LibraryItem, LibraryResponse, LibrarySmartUpdateResponse
 
 __all__ = [
     "LoginRequest",
@@ -24,4 +24,5 @@ __all__ = [
     "RecentUpdatesResponse",
     "LibraryItem",
     "LibraryResponse",
+    "LibrarySmartUpdateResponse",
 ]

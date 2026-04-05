@@ -1,4 +1,9 @@
-import type { LibraryRepairResponse, LibraryResponse, OperationResponse } from "./contracts";
+import type {
+  LibraryRepairResponse,
+  LibraryResponse,
+  LibrarySmartUpdateResponse,
+  OperationResponse,
+} from "./contracts";
 import { apiFetch } from "./http";
 
 export function fetchLibrary(keyword = "") {
@@ -17,6 +22,12 @@ export function refreshLibrary(keyword = "") {
   }
   const suffix = query.toString() ? `?${query.toString()}` : "";
   return apiFetch<LibraryResponse>(`/api/library/refresh${suffix}`, {
+    method: "POST",
+  });
+}
+
+export function smartUpdateLibrary() {
+  return apiFetch<LibrarySmartUpdateResponse>("/api/library/smart-update", {
     method: "POST",
   });
 }

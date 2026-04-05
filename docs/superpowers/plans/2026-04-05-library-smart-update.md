@@ -28,8 +28,10 @@
 - Modify: `zaimanhua/backend/schemas/__init__.py`
 - Modify: `zaimanhua/backend/app_services/library_service.py`
 - Modify: `zaimanhua/backend/api/routes/library.py`
+- Modify: `zaimanhua/services/api.py`
 
 - [ ] 在 `library.py` 中新增智能更新响应模型，至少包含候选 `items`、`scanned_pages`、`recent_total`、`matched_total`、`candidate_total`、`missing_id_total` 和消息字段。
+- [ ] 在 `api.py` 中新增一个面向智能更新的原始最近更新接口，例如 `get_recent_updates_raw(page)`，返回包含 `id`、`title`、`last_updatetime` 等原始字段的列表；请求失败时不要静默吞掉错误，要让上层能明确判定失败。
 - [ ] 在 `LibraryService` 里新增候选生成方法，直接基于缓存恢复出的书库条目构建 `local_by_id`，扫描最近更新固定页数上限，按 `remote_ts > local.last_update_ts` 规则筛候选并去重。
 - [ ] 为缺少 `id` 的本地作品做单独计数，供前端提示用户后续使用“补全”。
 - [ ] 在 `library` 路由新增智能更新接口，例如 `POST /api/library/smart-update`，复用现有登录校验。

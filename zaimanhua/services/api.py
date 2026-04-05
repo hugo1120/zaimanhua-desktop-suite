@@ -231,35 +231,63 @@ class ZaimanhuaAPI:
             except:
                 pass
 
+    def get_recent_updates_raw(self, page: int=1) -> List[Dict[str, Any]]:
+        """获取最近更新原始数据，失败时抛出异常供上层判定。"""
+        page_number = int(page or 1)
+        if page_number < 1:
+            page_number = 1
+
+        url = f'{self.base_url}/comic/update/list/0/{page_number}'
+        res = self.session.get(url, headers=self._get_headers(), verify=False, timeout=8)
+        res.raise_for_status()
+
+        payload = res.json()
+        if payload.get('errno', 0) != 0:
+            raise RuntimeError(f"recent updates api errno={payload.get('errno')}")
+
+        raw_data = payload.get('data')
+        if not isinstance(raw_data, list):
+            return []
+
+        normalized: List[Dict[str, Any]] = []
+        for item in raw_data:
+            if not isinstance(item, dict):
+                continue
+            mid = item.get('comic_id')
+            if not mid or mid == 0:
+                mid = item.get('id')
+            if not mid:
+                continue
+            normalized_item = dict(item)
+            normalized_item['id'] = str(mid)
+            normalized_item['title'] = str(item.get('title') or item.get('name') or '')
+            try:
+                normalized_item['last_updatetime'] = int(item.get('last_updatetime') or 0)
+            except (TypeError, ValueError):
+                normalized_item['last_updatetime'] = 0
+            normalized.append(normalized_item)
+        return normalized
+
     def get_recent_updates(self, page: int=1) -> List[Dict[str, Any]]:
         """获取最近更新 (V10 Feature)"""
         results = []
         try:
-            url = f'{self.base_url}/comic/update/list/0/{page}'
-            res = self.session.get(url, headers=self._get_headers(), verify=False, timeout=8)
-            if res.status_code == 200:
-                data = res.json()
-                raw_data = data.get('data')
-                if raw_data:
-                    for item in raw_data:
-                        mid = item.get('comic_id')
-                        if not mid or mid == 0:
-                            mid = item.get('id')
-                        title = item.get('title', item.get('name', 'Unknown'))
-                        cover = item.get('cover')
-                        authors = item.get('authors', '')
-                        status = item.get('status', '')
-                        last_ch = item.get('last_update_chapter_name', '')
-                        ts = item.get('last_updatetime', 0)
-                        import datetime
-                        time_str = ''
-                        if ts:
-                            try:
-                                dt = datetime.datetime.fromtimestamp(int(ts))
-                                time_str = dt.strftime('%Y-%m-%d %H:%M')
-                            except:
-                                pass
-                        results.append({'id': str(mid), 'title': title, 'cover': cover, 'author': authors, 'status': status, 'latest': last_ch, 'time': time_str})
+            raw_data = self.get_recent_updates_raw(page)
+            for item in raw_data:
+                cover = item.get('cover')
+                authors = item.get('authors', '')
+                status = item.get('status', '')
+                last_ch = item.get('last_update_chapter_name', '')
+                ts = item.get('last_updatetime', 0)
+                import datetime
+                time_str = ''
+                if ts:
+                    try:
+                        dt = datetime.datetime.fromtimestamp(int(ts))
+                        time_str = dt.strftime('%Y-%m-%d %H:%M')
+                    except:
+                        pass
+                results.append({'id': str(item.get('id') or ''), 'title': str(item.get('title') or ''), 'cover': cover, 'author': authors, 'status': status, 'latest': last_ch, 'time': time_str})
         except Exception as e:
             print(f'Recent Updates Error: {e}')
         return results

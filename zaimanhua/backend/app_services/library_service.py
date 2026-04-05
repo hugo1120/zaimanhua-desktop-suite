@@ -8,9 +8,15 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from zaimanhua.core.manga_metadata import coerce_int, extract_latest_chapter, format_update_text
-from zaimanhua.backend.schemas.library import LibraryItem, LibraryRepairResponse, LibraryResponse
+from zaimanhua.backend.schemas.library import (
+    LibraryItem,
+    LibraryRepairResponse,
+    LibraryResponse,
+    LibrarySmartUpdateResponse,
+)
 
 LIBRARY_CACHE_VERSION = 2
+SMART_UPDATE_MAX_PAGES = 5
 COVER_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 
 logger = logging.getLogger(__name__)
@@ -81,6 +87,13 @@ def _empty_payload() -> dict[str, Any]:
     }
 
 
+def _is_valid_manga_id(raw_id: Any) -> bool:
+    manga_id = str(raw_id or "").strip()
+    if not manga_id:
+        return False
+    return manga_id not in {"???", "0", "None", "null"}
+
+
 class LibraryService:
     def __init__(
         self,
@@ -108,6 +121,137 @@ class LibraryService:
         scanned = self._scan_library()
         source = "scan"
         return self._build_response(scanned, keyword, source)
+
+    def build_smart_update_candidates(self, max_pages: int = SMART_UPDATE_MAX_PAGES) -> LibrarySmartUpdateResponse:
+        if self._api is None or not hasattr(self._api, "get_recent_updates_raw"):
+            return LibrarySmartUpdateResponse(
+                ok=False,
+                message="未配置可用的最近更新接口",
+                items=[],
+            )
+
+        try:
+            page_limit = int(max_pages)
+        except (TypeError, ValueError):
+            page_limit = SMART_UPDATE_MAX_PAGES
+        page_limit = max(1, min(page_limit, SMART_UPDATE_MAX_PAGES))
+
+        payload = self._read_cache_payload()
+        local_records_by_id, missing_id_total = self._build_smart_update_local_records(payload)
+        if not local_records_by_id:
+            message = "书库缓存不可用，请先刷新书库后再试"
+            if missing_id_total > 0:
+                message = "书库条目缺少作品 ID，请先补全元数据后再试"
+            return LibrarySmartUpdateResponse(
+                ok=False,
+                message=message,
+                items=[],
+                scanned_pages=0,
+                recent_total=0,
+                matched_total=0,
+                candidate_total=0,
+                missing_id_total=missing_id_total,
+            )
+
+        scanned_pages = 0
+        recent_total = 0
+        remote_latest_by_id: dict[str, dict[str, Any]] = {}
+
+        try:
+            for page in range(1, page_limit + 1):
+                rows = self._api.get_recent_updates_raw(page)
+                scanned_pages += 1
+                if not isinstance(rows, list):
+                    continue
+                for row in rows:
+                    if not isinstance(row, dict):
+                        continue
+                    recent_total += 1
+                    remote_id = str(row.get("id") or row.get("comic_id") or "").strip()
+                    if not _is_valid_manga_id(remote_id):
+                        continue
+                    remote_ts = coerce_int(row.get("last_updatetime"), 0)
+                    existing = remote_latest_by_id.get(remote_id)
+                    if existing is None or remote_ts > coerce_int(existing.get("last_updatetime"), 0):
+                        merged = dict(row)
+                        merged["id"] = remote_id
+                        merged["last_updatetime"] = remote_ts
+                        remote_latest_by_id[remote_id] = merged
+        except Exception:
+            logger.warning("获取最近更新失败", exc_info=True)
+            return LibrarySmartUpdateResponse(
+                ok=False,
+                message="最近更新获取失败，请稍后重试",
+                items=[],
+                scanned_pages=scanned_pages,
+                recent_total=recent_total,
+                matched_total=0,
+                candidate_total=0,
+                missing_id_total=missing_id_total,
+            )
+
+        matched_total = 0
+        candidates: list[dict[str, Any]] = []
+        cache_dirty = False
+        for remote_id, remote_item in remote_latest_by_id.items():
+            local_records = local_records_by_id.get(remote_id)
+            if not local_records:
+                continue
+            matched_total += 1
+            if self._refresh_smart_update_records_from_info(local_records):
+                cache_dirty = True
+            local_item = self._pick_latest_smart_update_record(local_records)
+            local_ts = coerce_int(local_item.get("last_update_ts"), 0)
+            remote_ts = coerce_int(remote_item.get("last_updatetime"), 0)
+            if remote_ts <= local_ts:
+                continue
+
+            candidate = dict(local_item)
+            candidate["id"] = remote_id
+            candidate["last_update_ts"] = remote_ts
+            candidate["last_update_text"] = format_update_text(remote_ts)
+            remote_title = str(remote_item.get("title") or "").strip()
+            if remote_title:
+                candidate["title"] = remote_title
+            remote_latest_chapter = str(remote_item.get("last_update_chapter_name") or "").strip()
+            if remote_latest_chapter:
+                candidate["latest_chapter"] = remote_latest_chapter
+            candidates.append(candidate)
+
+        candidates.sort(
+            key=lambda item: (coerce_int(item.get("last_update_ts"), 0), str(item.get("id") or "")),
+            reverse=True,
+        )
+        candidate_items = [
+            LibraryItem(
+                id=str(item.get("id") or "???"),
+                title=str(item.get("title") or ""),
+                author=str(item.get("author") or ""),
+                status=str(item.get("status") or "未知状态"),
+                description=str(item.get("description") or ""),
+                path=str(item.get("path") or ""),
+                cover_path=str(item.get("cover_path") or ""),
+                mtime=int(item.get("mtime") or 0),
+                last_update_ts=int(item.get("last_update_ts") or 0),
+                last_update_text=str(item.get("last_update_text") or ""),
+                latest_chapter=str(item.get("latest_chapter") or ""),
+            )
+            for item in candidates
+        ]
+
+        if cache_dirty:
+            self._write_cache_payload(payload)
+
+        return LibrarySmartUpdateResponse(
+            ok=True,
+            message=f"已扫描最近更新 {scanned_pages} 页",
+            items=candidate_items,
+            scanned_pages=scanned_pages,
+            recent_total=recent_total,
+            matched_total=matched_total,
+            candidate_total=len(candidate_items),
+            missing_id_total=missing_id_total,
+        )
 
     def _read_cache_payload(self) -> dict[str, Any]:
         cache_path = self._cache_path
@@ -163,6 +307,123 @@ class LibraryService:
             entry = items_map.get(folder_name)
             restored.append(self._build_item_from_cache(folder_name, folder_path, entry))
         return restored
+
+    def _build_smart_update_local_records(
+        self, payload: dict[str, Any]
+    ) -> tuple[dict[str, list[dict[str, Any]]], int]:
+        if not isinstance(payload, dict):
+            return {}, 0
+        items_map = payload.get("items") or {}
+        ordered_names = payload.get("ordered_names") or sorted(items_map.keys())
+        local_records_by_id: dict[str, list[dict[str, Any]]] = {}
+        missing_id_total = 0
+        for folder_name in ordered_names:
+            cache_entry = items_map.get(folder_name)
+            if not isinstance(cache_entry, dict):
+                continue
+            item = self._build_smart_update_item_from_cache(folder_name, cache_entry)
+            local_id = str(item.get("id") or "").strip()
+            if not _is_valid_manga_id(local_id):
+                missing_id_total += 1
+                continue
+            local_records_by_id.setdefault(local_id, []).append(
+                {
+                    "folder_name": str(folder_name),
+                    "cache_entry": cache_entry,
+                    "item": item,
+                }
+            )
+        return local_records_by_id, missing_id_total
+
+    def _build_smart_update_item_from_cache(self, folder_name: str, cache_entry: dict[str, Any]) -> dict[str, Any]:
+        data = dict((cache_entry or {}).get("data") or {})
+        folder_path = self._download_dir / folder_name
+        item = dict(data)
+        item["path"] = str(folder_path)
+        cover_name = str(item.pop("cover_name", "") or "").strip()
+        item["cover_path"] = str(folder_path / cover_name) if cover_name else ""
+        item.setdefault("title", folder_name)
+        item.setdefault("status", "未知状态")
+        item.setdefault("author", "")
+        item.setdefault("id", "???")
+        item.setdefault("description", "")
+        item.setdefault("mtime", int((cache_entry or {}).get("dir_mtime_ns", 0) // 1_000_000_000))
+        item.setdefault("last_update_ts", 0)
+        item.setdefault("last_update_text", "")
+        item.setdefault("latest_chapter", "")
+        return self._fill_author_from_index(item)
+
+    def _refresh_smart_update_records_from_info(self, local_records: list[dict[str, Any]]) -> bool:
+        cache_dirty = False
+        for record in local_records:
+            folder_name = str(record.get("folder_name") or "").strip()
+            cache_entry = record.get("cache_entry")
+            if not folder_name or not isinstance(cache_entry, dict):
+                continue
+            folder_path = self._download_dir / folder_name
+            info_path = folder_path / "info.json"
+            info_mtime_ns = _safe_mtime_ns(info_path)
+            cached_info_mtime_ns = coerce_int(cache_entry.get("info_mtime_ns"), 0)
+            if info_mtime_ns <= cached_info_mtime_ns:
+                continue
+            try:
+                info_data = json.loads(info_path.read_text(encoding="utf-8"))
+            except Exception:
+                logger.warning("智能更新懒校正读取 info.json 失败: %s", info_path, exc_info=True)
+                continue
+            if not isinstance(info_data, dict):
+                continue
+            cache_entry["data"] = self._merge_cache_data_from_info(cache_entry.get("data"), info_data)
+            cache_entry["info_mtime_ns"] = info_mtime_ns
+            record["item"] = self._build_smart_update_item_from_cache(folder_name, cache_entry)
+            cache_dirty = True
+        return cache_dirty
+
+    def _merge_cache_data_from_info(
+        self,
+        cached_data: Any,
+        info_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        merged = dict(cached_data or {})
+        info_id = str(info_data.get("id") or "").strip()
+        if info_id:
+            merged["id"] = info_id
+        title = str(info_data.get("title") or "").strip()
+        if title:
+            merged["title"] = title
+        if "author" in info_data:
+            merged["author"] = self._clean_author_field(info_data.get("author"))
+        if "status" in info_data:
+            merged["status"] = str(info_data.get("status") or "")
+        if "description" in info_data:
+            merged["description"] = str(info_data.get("description") or "")
+        last_update_ts = coerce_int(info_data.get("last_update_ts"), coerce_int(merged.get("last_update_ts"), 0))
+        merged["last_update_ts"] = last_update_ts
+        last_update_text = str(info_data.get("last_update_text") or "").strip()
+        merged["last_update_text"] = last_update_text or format_update_text(last_update_ts)
+        latest_chapter = str(info_data.get("latest_chapter") or "").strip()
+        if latest_chapter:
+            merged["latest_chapter"] = latest_chapter
+        cover_path = str(info_data.get("cover_path") or "").strip()
+        if cover_path:
+            cover_name = Path(cover_path).name
+            if cover_name:
+                merged["cover_name"] = cover_name
+        elif not merged.get("cover_name"):
+            merged.pop("cover_name", None)
+        return merged
+
+    def _pick_latest_smart_update_record(self, local_records: list[dict[str, Any]]) -> dict[str, Any]:
+        latest_item: dict[str, Any] | None = None
+        for record in local_records:
+            item = record.get("item")
+            if not isinstance(item, dict):
+                continue
+            if latest_item is None or coerce_int(item.get("last_update_ts"), 0) > coerce_int(
+                latest_item.get("last_update_ts"), 0
+            ):
+                latest_item = item
+        return latest_item or {}
 
     def _scan_library(self) -> list[dict[str, Any]]:
         download_dir = self._download_dir

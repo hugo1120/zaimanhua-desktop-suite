@@ -29,3 +29,14 @@ class LibraryRepairResponse(BaseModel):
     scanned: int = 0
     fixed: int = 0
     skipped: int = 0
+
+
+class LibrarySmartUpdateResponse(BaseModel):
+    ok: bool
+    message: str
+    items: list[LibraryItem]
+    scanned_pages: int = 0
+    recent_total: int = 0
+    matched_total: int = 0
+    candidate_total: int = 0
+    missing_id_total: int = 0

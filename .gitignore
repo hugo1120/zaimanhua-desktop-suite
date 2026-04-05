@@ -19,16 +19,23 @@ env/
 # Frontend
 ui_web/frontend/node_modules/
 ui_web/frontend/dist/
+ui_web/frontend/dist_manual*/
+*.tsbuildinfo
 
 # Build artifacts
 build/
 dist/
+build_manual_pkg*/
+dist_manual_pkg/
 *.egg-info/
 
 # Logs and temp files
 *.log
 .test_tmp/
 pytest-cache-files-*/
+cache/
+temp/
+downloads/
 
 # OS / IDE
 .DS_Store

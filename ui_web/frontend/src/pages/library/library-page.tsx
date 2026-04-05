@@ -2,7 +2,7 @@ import { useMemo, useState, type FormEvent, useEffect, useRef, useCallback } fro
 import { Button, SegmentedControl, Select, SimpleGrid, TextInput, Group, ActionIcon, Tooltip, Stack } from "@mantine/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LibraryItemCard } from "../../components/library-item-card";
-import { fetchLibrary, refreshLibrary, repairLibraryMetadata, openLibraryFolder } from "../../lib/api/library";
+import { fetchLibrary, refreshLibrary, repairLibraryMetadata, openLibraryFolder, smartUpdateLibrary } from "../../lib/api/library";
 import { addDownload } from "../../lib/api/downloads";
 import type { AddDownloadRequest, LibraryItem } from "../../lib/api/contracts";
 import { enqueueLibraryItemsInBatches } from "./bulk-library-update";
@@ -63,16 +63,17 @@ export function LibraryPage() {
   const [selectedLetter, setSelectedLetter] = useState("ALL");
   const [addedIds, setAddedIds] = useState<string[]>([]);
   const [isUpdatingAll, setIsUpdatingAll] = useState(false);
+  const [isSmartUpdating, setIsSmartUpdating] = useState(false);
 
   const loaderRef = useRef<HTMLDivElement>(null);
 
   const libraryQuery = useQuery({ queryKey: ["library", submittedKeyword], queryFn: () => fetchLibrary(submittedKeyword) });
   
   const refreshMutation = useMutation({
-    mutationFn: () => refreshLibrary(submittedKeyword),
-    onSuccess: (res) => { 
-      queryClient.setQueryData(["library", submittedKeyword], res); 
-      setFeedback(`已刷新 ${res.total} 项`); 
+    mutationFn: (keyword: string) => refreshLibrary(keyword),
+    onSuccess: (res, keyword) => { 
+      queryClient.setQueryData(["library", keyword], res); 
+      setFeedback(res.source === "cache" ? `刷新完成，当前仍显示缓存，共 ${res.total} 项` : `已校验磁盘，刷新 ${res.total} 项`);
       setVisibleCount(30); 
     }
   });
@@ -82,9 +83,26 @@ export function LibraryPage() {
     onSuccess: (res, vars) => { setFeedback(res.message); if (res.ok && vars.id) setAddedIds(prev => [...new Set([...prev, vars.id])]); }
   });
 
-  const repairMutation = useMutation({ mutationFn: repairLibraryMetadata, onSuccess: (res) => { setFeedback(res.message); refreshMutation.mutate(); } });
+  const repairMutation = useMutation({
+    mutationFn: repairLibraryMetadata,
+    onSuccess: (res) => {
+      const currentKeyword = submittedKeyword;
+      setFeedback(res.message);
+      refreshMutation.mutate(currentKeyword);
+    }
+  });
 
-  useEffect(() => { refreshMutation.mutate(); }, []);
+  const isRefreshing = refreshMutation.isPending;
+  const isRepairing = repairMutation.isPending;
+  const isSingleUpdating = addDownloadMutation.isPending;
+  const isBatchUpdating = isUpdatingAll || isSmartUpdating;
+  const isWriteBusy = isRefreshing || isRepairing || isSingleUpdating || isBatchUpdating;
+
+  useEffect(() => {
+    if (libraryQuery.data?.source === "cache") {
+      setFeedback("当前显示缓存，未校验磁盘");
+    }
+  }, [libraryQuery.data?.source, submittedKeyword]);
 
   // 无限滚动逻辑
   const handleObserver = useCallback((entries: IntersectionObserverEntry[]) => {
@@ -101,10 +119,49 @@ export function LibraryPage() {
     return () => { if (loaderRef.current) observer.unobserve(loaderRef.current); };
   }, [handleObserver]);
 
-  const handleSearch = (e: FormEvent) => { e.preventDefault(); setFeedback(""); setVisibleCount(30); setSubmittedKeyword(inputKeyword.trim()); };
+  const handleSearch = (e: FormEvent) => {
+    e.preventDefault();
+    if (isWriteBusy) return;
+    setFeedback("");
+    setVisibleCount(30);
+    setSubmittedKeyword(inputKeyword.trim());
+  };
+
+  async function handleSmartUpdate() {
+    if (isWriteBusy) return;
+    setIsSmartUpdating(true);
+    try {
+      const res = await smartUpdateLibrary();
+      const candidates = res.items ?? [];
+      if (candidates.length === 0) {
+        setFeedback(res.message || "最近更新未命中本地书库或本地已是最新");
+        return;
+      }
+
+      setFeedback(`智能更新正在加入下载队列：0 / ${candidates.length}`);
+      const { stats, addedIds: newlyAddedIds } = await enqueueLibraryItemsInBatches({
+        items: candidates,
+        enqueue: (item) => addDownload({ id: item.id, title: item.title, cover: item.cover_path }),
+        getId: (item) => item.id,
+        onProgress: (stats) => {
+          setFeedback(`智能更新正在加入下载队列：${stats.processed} / ${stats.total}`);
+        },
+      });
+
+      setFeedback(
+        `智能更新已处理 ${stats.total} 本：新增 ${stats.added}，队列重复 ${stats.duplicated}，失败 ${stats.failed}`,
+      );
+      setAddedIds(prev => [...new Set([...prev, ...newlyAddedIds])]);
+      void queryClient.invalidateQueries({ queryKey: ["downloads", "queue"] });
+    } catch {
+      setFeedback("智能更新失败，请稍后重试");
+    } finally {
+      setIsSmartUpdating(false);
+    }
+  }
 
   async function handleUpdateAll() {
-    if (filteredByLetter.length === 0) return;
+    if (isWriteBusy || filteredByLetter.length === 0) return;
     setIsUpdatingAll(true);
     setFeedback(`正在加入下载队列：0 / ${filteredByLetter.length}`);
     try {
@@ -116,7 +173,7 @@ export function LibraryPage() {
           setFeedback(`正在加入下载队列：${stats.processed} / ${stats.total}`);
         },
       });
-      setFeedback(`已处理 ${stats.total} 本：新增 ${stats.added}，本地已存在 ${stats.duplicated}，失败 ${stats.failed}`);
+      setFeedback(`已处理 ${stats.total} 本：新增 ${stats.added}，队列重复 ${stats.duplicated}，失败 ${stats.failed}`);
       setAddedIds(prev => [...new Set([...prev, ...newlyAddedIds])]);
       void queryClient.invalidateQueries({ queryKey: ["downloads", "queue"] });
     } finally { setIsUpdatingAll(false); }
@@ -139,9 +196,10 @@ export function LibraryPage() {
             <span className="library-header__count" style={{ opacity: 0.6, fontSize: "0.9rem" }}>{rawItems.length} 本作品</span>
           </Group>
           <Group gap="xs">
-            <Button variant="light" color="teal" size="compact-sm" onClick={() => refreshMutation.mutate()} loading={refreshMutation.isPending} disabled={isUpdatingAll}>刷新</Button>
-            <Button variant="light" color="teal" size="compact-sm" onClick={() => repairMutation.mutate()} loading={repairMutation.isPending} disabled={isUpdatingAll}>补全</Button>
-            <Button variant="light" color="teal" size="compact-sm" onClick={handleUpdateAll} disabled={filteredByLetter.length === 0 || isUpdatingAll} loading={isUpdatingAll}>更新全部 ({filteredByLetter.length})</Button>
+            <Button variant="light" color="teal" size="compact-sm" onClick={() => refreshMutation.mutate(submittedKeyword)} loading={isRefreshing} disabled={isWriteBusy}>刷新</Button>
+            <Button variant="light" color="teal" size="compact-sm" onClick={() => repairMutation.mutate()} loading={isRepairing} disabled={isWriteBusy}>补全</Button>
+            <Button variant="light" color="teal" size="compact-sm" onClick={handleSmartUpdate} disabled={isWriteBusy} loading={isSmartUpdating}>智能更新</Button>
+            <Button variant="light" color="teal" size="compact-sm" onClick={handleUpdateAll} disabled={filteredByLetter.length === 0 || isWriteBusy} loading={isUpdatingAll}>全量更新 ({filteredByLetter.length})</Button>
           </Group>
         </div>
 
@@ -193,7 +251,17 @@ export function LibraryPage() {
         
         <SimpleGrid cols={{ base: 2, sm: 3, md: 4, xl: 5 }} spacing="md">
           {visibleItems.map(item => (
-            <LibraryItemCard key={item.path} item={item} added={addedIds.includes(item.id)} pending={addDownloadMutation.isPending && addDownloadMutation.variables?.id === item.id} onUpdate={(m) => addDownloadMutation.mutate({ id: m.id, title: m.title, cover: m.cover_path })} onOpenFolder={(m) => openLibraryFolder(m.path)} />
+            <LibraryItemCard
+              key={item.path}
+              item={item}
+              added={addedIds.includes(item.id)}
+              pending={isSingleUpdating ? addDownloadMutation.variables?.id === item.id : isWriteBusy}
+              onUpdate={(m) => {
+                if (isWriteBusy) return;
+                addDownloadMutation.mutate({ id: m.id, title: m.title, cover: m.cover_path });
+              }}
+              onOpenFolder={(m) => openLibraryFolder(m.path)}
+            />
           ))}
         </SimpleGrid>
         

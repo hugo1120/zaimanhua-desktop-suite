@@ -3,7 +3,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from zaimanhua.backend.api.dependencies import BackendContainer, get_container, get_current_user
-from zaimanhua.backend.schemas.library import LibraryRepairResponse, LibraryResponse
+from zaimanhua.backend.schemas.library import (
+    LibraryRepairResponse,
+    LibraryResponse,
+    LibrarySmartUpdateResponse,
+)
 
 router = APIRouter(tags=["library"])
 
@@ -32,3 +36,12 @@ def repair_library(
     user=Depends(get_current_user),
 ) -> LibraryRepairResponse:
     return container.library_service.repair_metadata()
+
+
+@router.post("/library/smart-update", response_model=LibrarySmartUpdateResponse)
+def smart_update_library(
+    max_pages: int = 5,
+    container: BackendContainer = Depends(get_container),
+    user=Depends(get_current_user),
+) -> LibrarySmartUpdateResponse:
+    return container.library_service.build_smart_update_candidates(max_pages=max_pages)
