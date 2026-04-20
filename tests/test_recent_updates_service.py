@@ -1,4 +1,7 @@
+import pytest
+
 from zaimanhua.backend.app_services.recent_updates_service import RecentUpdatesService
+from zaimanhua.services.api import ApiAuthenticationError
 
 
 class FakeApi:
@@ -6,7 +9,7 @@ class FakeApi:
         self.pages = pages
         self.calls = []
 
-    def get_recent_updates(self, page):
+    def get_recent_updates_raw(self, page):
         self.calls.append(page)
         return list(self.pages.get(page, []))
 
@@ -60,3 +63,44 @@ def test_cache_expires_after_ttl():
 
     assert refreshed_page.items[0].id == "10"
     assert api.calls == [1, 1]
+
+
+def test_list_page_builds_items_from_raw_api_rows():
+    api = FakeApi(
+        {
+            1: [
+                {
+                    "comic_id": 10,
+                    "title": "原始最近更新",
+                    "cover": "https://example.com/cover.jpg",
+                    "authors": "作者A",
+                    "status": "连载中",
+                    "last_update_chapter_name": "第10话",
+                    "last_updatetime": 1713500000,
+                }
+            ]
+        }
+    )
+    service = RecentUpdatesService(api=api)
+
+    response = service.list_page(1)
+
+    assert response.page == 1
+    assert api.calls == [1]
+    assert len(response.items) == 1
+    assert response.items[0].id == "10"
+    assert response.items[0].title == "原始最近更新"
+    assert response.items[0].author == "作者A"
+    assert response.items[0].latest == "第10话"
+    assert response.items[0].time != ""
+
+
+def test_list_page_propagates_authentication_error_from_raw_api():
+    class AuthExpiredApi:
+        def get_recent_updates_raw(self, page):
+            raise ApiAuthenticationError("登录已失效，请重新登录")
+
+    service = RecentUpdatesService(api=AuthExpiredApi())
+
+    with pytest.raises(ApiAuthenticationError, match="登录已失效"):
+        service.list_page(1)

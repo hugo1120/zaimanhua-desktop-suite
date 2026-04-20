@@ -9,8 +9,8 @@ cd "..\.." || goto :error
 
 echo [2/4] Setting up Python Environment...
 if not exist "venv" python -m venv "venv" || goto :error
-call "venv\Scripts\activate.bat" || goto :error
-pip install -r "requirements-desktop.txt" || goto :error
+set PYTHON_EXE=.\venv\Scripts\python.exe
+%PYTHON_EXE% -m pip install -r "requirements-desktop.txt" || goto :error
 
 echo [3/4] Packaging EXE...
 set ICON_CMD=
@@ -29,7 +29,8 @@ if exist "dist" rmdir /s /q "dist"
 :: --- Professional Layout: Use --onedir with --contents-directory ---
 :: This puts all DLLs and messy files into "internal/" subfolder.
 :: Root folder will only have: hugo-zaimanhua.exe, internal/, and your data folders.
-.\venv\Scripts\pyinstaller.exe --name "hugo-zaimanhua" ^
+%PYTHON_EXE% -m PyInstaller --name "hugo-zaimanhua" ^
+    --specpath "build" ^
     --onedir ^
     --windowed ^
     --contents-directory "internal" ^

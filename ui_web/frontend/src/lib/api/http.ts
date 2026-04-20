@@ -1,4 +1,5 @@
 import { resolveApiUrl } from "../backend-origin";
+import { useSessionStore } from "../../stores/session-store";
 
 export class ApiError extends Error {
   status: number;
@@ -57,7 +58,11 @@ export async function apiFetch<T>(input: string, init?: RequestInit): Promise<T>
   const payload = await parseResponseBody(response);
 
   if (!response.ok) {
-    throw new ApiError(response.status, extractErrorMessage(payload, response.status), payload);
+    const error = new ApiError(response.status, extractErrorMessage(payload, response.status), payload);
+    if (response.status === 401) {
+      useSessionStore.getState().clear();
+    }
+    throw error;
   }
 
   return payload as T;

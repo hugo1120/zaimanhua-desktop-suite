@@ -7,9 +7,20 @@ import { addDownload } from "../../lib/api/downloads";
 import type { AddDownloadRequest, RecentUpdatesResponse } from "../../lib/api/contracts";
 import { fetchRecentUpdates } from "../../lib/api/recent-updates";
 import { searchManga } from "../../lib/api/search";
+import { ApiError } from "../../lib/api/http";
 
 function IconSearch() { return <svg fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24" height="1.2rem" width="1.2rem"><circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" /></svg>; }
 function IconRefresh() { return <svg fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24" height="1rem" width="1rem"><path d="M23 4v6h-6M1 20v-6h6" /><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" /></svg>; }
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof ApiError) {
+    return error.message;
+  }
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return fallback;
+}
 
 export function SearchPage() {
   const queryClient = useQueryClient();
@@ -18,10 +29,11 @@ export function SearchPage() {
   const [feedback, setFeedback] = useState("");
   const [addedIds, setAddedIds] = useState<string[]>([]);
   const [recentPage, setRecentPage] = useState(1);
-  const [recentItems, setRecentItems] = useState<any[]>([]);
+  const [recentItems, setRecentItems] = useState<RecentUpdatesResponse["items"]>([]);
   const [recentHasMore, setRecentHasMore] = useState(true);
   const [isRefreshingRecent, setIsRefreshingRecent] = useState(false);
   const recentSentinelRef = useRef<HTMLDivElement>(null);
+  const recentSeenIdsRef = useRef<Set<string>>(new Set());
 
   const searchQuery = useQuery({ queryKey: ["search", submittedKeyword], enabled: submittedKeyword.length > 0, queryFn: () => searchManga(submittedKeyword) });
   const recentQuery = useQuery({ queryKey: ["recent-updates", recentPage, isRefreshingRecent], enabled: submittedKeyword.length === 0, queryFn: () => fetchRecentUpdates(recentPage, isRefreshingRecent) });
@@ -36,13 +48,33 @@ export function SearchPage() {
   useEffect(() => {
     if (!recentQuery.data || submittedKeyword.length > 0) return;
     const items = recentQuery.data.items;
-    if (recentPage === 1) { setRecentItems(items); setRecentHasMore(items.length > 0); }
+    if (recentPage === 1) {
+      recentSeenIdsRef.current = new Set(items.map((item) => item.id));
+      setRecentItems(items);
+      setRecentHasMore(items.length > 0);
+    }
     else {
       if (items.length === 0) setRecentHasMore(false);
-      else setRecentItems(prev => [...prev, ...items.filter(item => !prev.find(p => p.id === item.id))]);
+      else {
+        const unique = items.filter(item => !recentSeenIdsRef.current.has(item.id));
+        if (unique.length === 0) {
+          setRecentHasMore(false);
+        } else {
+          unique.forEach((item) => recentSeenIdsRef.current.add(item.id));
+          setRecentItems(prev => [...prev, ...unique]);
+        }
+      }
     }
     if (isRefreshingRecent && !recentQuery.isFetching) setIsRefreshingRecent(false);
   }, [recentQuery.data, recentQuery.isFetching, recentPage, isRefreshingRecent, submittedKeyword]);
+
+  useEffect(() => {
+    if (submittedKeyword.length > 0 || !recentQuery.isError) return;
+    setRecentHasMore(false);
+    if (isRefreshingRecent) {
+      setIsRefreshingRecent(false);
+    }
+  }, [recentQuery.isError, submittedKeyword, isRefreshingRecent]);
 
   useEffect(() => {
     if (submittedKeyword.length > 0) return;
@@ -133,7 +165,16 @@ export function SearchPage() {
               <RecentUpdateCard key={item.id} item={item} added={addedIds.includes(item.id)} pending={addDownloadMutation.isPending && addDownloadMutation.variables?.id === item.id} onDownload={(m) => addDownloadMutation.mutate({ id: m.id, title: m.title, cover: m.cover })} />
             ))}
           </SimpleGrid>
+          {recentQuery.isError ? (
+            <div className="page-error">{getErrorMessage(recentQuery.error, "最近更新加载失败")}</div>
+          ) : null}
           <div ref={recentSentinelRef} style={{ height: 40 }} />
+          {recentQuery.isFetching ? (
+            <div className="page-empty" style={{ textAlign: "center", marginTop: 16 }}>加载中…</div>
+          ) : null}
+          {!recentHasMore && !recentQuery.isFetching ? (
+            <div className="page-empty" style={{ textAlign: "center", marginTop: 16 }}>没有更多了</div>
+          ) : null}
         </>
       )}
     </section>

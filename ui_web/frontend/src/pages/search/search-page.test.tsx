@@ -1,8 +1,9 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, test, vi, beforeEach } from "vitest";
 
 import { AppProviders } from "../../app/providers";
+import { ApiError } from "../../lib/api/http";
 import { SearchPage } from "./search-page";
 import * as searchApi from "../../lib/api/search";
 import * as recentUpdatesApi from "../../lib/api/recent-updates";
@@ -76,5 +77,99 @@ describe("SearchPage", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "已加入" })).toBeInTheDocument();
     });
+  });
+
+  test("shows recent update error when discovery feed request fails", async () => {
+    (recentUpdatesApi.fetchRecentUpdates as any).mockRejectedValue(
+      new ApiError(502, "最近更新加载失败，请稍后重试", {
+        detail: "最近更新加载失败，请稍后重试",
+      }),
+    );
+
+    render(
+      <AppProviders>
+        <SearchPage />
+      </AppProviders>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("最近更新加载失败，请稍后重试")).toBeInTheDocument();
+    });
+  });
+
+  test("stops paging when the next discovery page contains only duplicate items", async () => {
+    const callbacks: IntersectionObserverCallback[] = [];
+    const originalObserver = window.IntersectionObserver;
+
+    class TriggerableIntersectionObserver {
+      callback: IntersectionObserverCallback;
+
+      constructor(callback: IntersectionObserverCallback) {
+        this.callback = callback;
+        callbacks.push(callback);
+      }
+
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+
+    Object.defineProperty(window, "IntersectionObserver", {
+      writable: true,
+      value: TriggerableIntersectionObserver,
+    });
+
+    (recentUpdatesApi.fetchRecentUpdates as any)
+      .mockResolvedValueOnce({
+        page: 1,
+        items: [{ id: "2", title: "最近更新-第一页", cover: "", author: "A", status: "连载中", latest: "第1话", time: "今天" }],
+      })
+      .mockResolvedValueOnce({
+        page: 2,
+        items: [{ id: "2", title: "最近更新-第一页", cover: "", author: "A", status: "连载中", latest: "第1话", time: "今天" }],
+      });
+
+    try {
+      render(
+        <AppProviders>
+          <SearchPage />
+        </AppProviders>,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText("最近更新-第一页")).toBeInTheDocument();
+      });
+
+      act(() => {
+        callbacks[callbacks.length - 1]?.(
+          [{ isIntersecting: true } as IntersectionObserverEntry],
+          {} as IntersectionObserver,
+        );
+      });
+
+      await waitFor(() => {
+        expect(recentUpdatesApi.fetchRecentUpdates).toHaveBeenCalledTimes(2);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("没有更多了")).toBeInTheDocument();
+      });
+
+      act(() => {
+        callbacks[callbacks.length - 1]?.(
+          [{ isIntersecting: true } as IntersectionObserverEntry],
+          {} as IntersectionObserver,
+        );
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(recentUpdatesApi.fetchRecentUpdates).toHaveBeenCalledTimes(2);
+    } finally {
+      Object.defineProperty(window, "IntersectionObserver", {
+        writable: true,
+        value: originalObserver,
+      });
+    }
   });
 });

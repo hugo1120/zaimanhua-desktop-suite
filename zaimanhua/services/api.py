@@ -11,6 +11,48 @@ import urllib3
 from requests.adapters import HTTPAdapter
 from urllib3.util.ssl_ import create_urllib3_context
 
+
+class ApiRequestError(RuntimeError):
+    """远端接口请求失败，适合向上层返回可读错误。"""
+
+
+class ApiAuthenticationError(ApiRequestError):
+    """远端认证已失效，应触发本地会话失效处理。"""
+
+
+def _extract_api_error_message(payload: Any, default_message: str) -> str:
+    if isinstance(payload, dict):
+        for key in ("errmsg", "message", "msg", "detail"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    if isinstance(payload, str) and payload.strip():
+        return payload.strip()
+    return default_message
+
+
+def _looks_like_auth_error(*, status_code: int, message: str) -> bool:
+    if status_code in {401, 403}:
+        return True
+
+    normalized = str(message or "").strip().casefold()
+    if not normalized:
+        return False
+
+    auth_keywords = (
+        "登录",
+        "未登录",
+        "token",
+        "授权",
+        "认证",
+        "expired",
+        "invalid",
+        "unauthorized",
+        "forbidden",
+    )
+    return any(keyword in normalized for keyword in auth_keywords)
+
+
 class CustomSSLAdapter(HTTPAdapter):
     """强制兼容旧版 SSL 协议"""
 
@@ -239,12 +281,30 @@ class ZaimanhuaAPI:
             page_number = 1
 
         url = f'{self.base_url}/comic/update/list/0/{page_number}'
-        res = self.session.get(url, headers=self._get_headers(), verify=False, timeout=8)
-        res.raise_for_status()
+        try:
+            res = self.session.get(url, headers=self._get_headers(), verify=False, timeout=8)
+        except requests.RequestException as exc:
+            raise ApiRequestError("最近更新加载失败，请稍后重试") from exc
 
-        payload = res.json()
-        if payload.get('errno', 0) != 0:
-            raise RuntimeError(f"recent updates api errno={payload.get('errno')}")
+        if res.status_code in {401, 403}:
+            raise ApiAuthenticationError("登录已失效，请重新登录")
+        if res.status_code >= 400:
+            raise ApiRequestError("最近更新加载失败，请稍后重试")
+
+        try:
+            payload = res.json()
+        except ValueError as exc:
+            raise ApiRequestError("最近更新接口返回格式异常") from exc
+
+        if not isinstance(payload, dict):
+            raise ApiRequestError("最近更新接口返回格式异常")
+
+        errno = payload.get('errno')
+        if errno not in (None, 0):
+            message = _extract_api_error_message(payload, f"recent updates api errno={errno}")
+            if _looks_like_auth_error(status_code=res.status_code, message=message):
+                raise ApiAuthenticationError("登录已失效，请重新登录")
+            raise ApiRequestError(message)
 
         raw_data = payload.get('data')
         if not isinstance(raw_data, list):
