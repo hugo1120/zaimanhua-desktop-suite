@@ -152,7 +152,7 @@ class ZaimanhuaAPI:
         target_url = self.web_search_url + clean_kw
         try:
             headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36', 'Referer': 'https://manhua.zaimanhua.com/'}
-            res = requests.get(target_url, headers=headers, verify=False, timeout=10)
+            res = self.session.get(target_url, headers=headers, verify=False, timeout=10)
             res.encoding = 'utf-8'
             if res.status_code == 200:
                 from bs4 import BeautifulSoup
@@ -165,9 +165,15 @@ class ZaimanhuaAPI:
                     title = a.get('title', '').strip() or a.get_text().strip()
                     href = a.get('href', '')
                     mid = href.rstrip('/').split('/')[-1]
+                    item_node = a.find_parent('li')
+                    author = ''
+                    if item_node is not None:
+                        author_node = item_node.select_one('p.auth')
+                        if author_node is not None:
+                            author = author_node.get_text(' ', strip=True)
                     if title and mid:
                         if not any((d['id'] == mid for d in results)):
-                            results.append({'title': title, 'id': mid, 'source': 'web'})
+                            results.append({'title': title, 'id': mid, 'author': author, 'source': 'web'})
                             count += 1
         except Exception as e:
             print(f'Web Search Error: {e}')

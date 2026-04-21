@@ -9,6 +9,7 @@ import uvicorn
 from pathlib import Path
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from zaimanhua.core.runtime_warnings import configure_runtime_warnings
 from zaimanhua.core.desktop_debug import (
     configure_desktop_debug,
     desktop_log,
@@ -24,6 +25,8 @@ from zaimanhua.core.windows_titlebar import (
     sync_window_titlebar_if_needed,
     sync_window_titlebar_from_page,
 )
+
+configure_runtime_warnings()
 
 # --- 路径与日志逻辑 ---
 def get_app_root():

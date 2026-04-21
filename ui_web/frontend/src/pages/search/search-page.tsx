@@ -22,6 +22,8 @@ function getErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+const MAX_CONSECUTIVE_DUPLICATE_RECENT_PAGES = 3;
+
 export function SearchPage() {
   const queryClient = useQueryClient();
   const [inputKeyword, setInputKeyword] = useState("");
@@ -34,6 +36,7 @@ export function SearchPage() {
   const [isRefreshingRecent, setIsRefreshingRecent] = useState(false);
   const recentSentinelRef = useRef<HTMLDivElement>(null);
   const recentSeenIdsRef = useRef<Set<string>>(new Set());
+  const recentDuplicatePagesRef = useRef(0);
 
   const searchQuery = useQuery({ queryKey: ["search", submittedKeyword], enabled: submittedKeyword.length > 0, queryFn: () => searchManga(submittedKeyword) });
   const recentQuery = useQuery({ queryKey: ["recent-updates", recentPage, isRefreshingRecent], enabled: submittedKeyword.length === 0, queryFn: () => fetchRecentUpdates(recentPage, isRefreshingRecent) });
@@ -47,19 +50,29 @@ export function SearchPage() {
 
   useEffect(() => {
     if (!recentQuery.data || submittedKeyword.length > 0) return;
-    const items = recentQuery.data.items;
-    if (recentPage === 1) {
+    const { page, items } = recentQuery.data;
+    if (page === 1) {
+      recentDuplicatePagesRef.current = 0;
       recentSeenIdsRef.current = new Set(items.map((item) => item.id));
       setRecentItems(items);
       setRecentHasMore(items.length > 0);
     }
     else {
-      if (items.length === 0) setRecentHasMore(false);
+      if (items.length === 0) {
+        recentDuplicatePagesRef.current = 0;
+        setRecentHasMore(false);
+      }
       else {
         const unique = items.filter(item => !recentSeenIdsRef.current.has(item.id));
         if (unique.length === 0) {
-          setRecentHasMore(false);
+          recentDuplicatePagesRef.current += 1;
+          if (recentDuplicatePagesRef.current >= MAX_CONSECUTIVE_DUPLICATE_RECENT_PAGES) {
+            setRecentHasMore(false);
+          } else {
+            setRecentPage(p => p + 1);
+          }
         } else {
+          recentDuplicatePagesRef.current = 0;
           unique.forEach((item) => recentSeenIdsRef.current.add(item.id));
           setRecentItems(prev => [...prev, ...unique]);
         }

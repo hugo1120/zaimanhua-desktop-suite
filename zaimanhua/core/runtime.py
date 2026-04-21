@@ -4,11 +4,11 @@ import concurrent.futures
 import os
 import threading
 import tkinter as tk
-import urllib3
 import warnings
 
 import customtkinter as ctk
 from PIL import Image, ImageTk
+from zaimanhua.core.runtime_warnings import configure_runtime_warnings
 from zaimanhua.core.crawler_runtime import (
     BUNDLE_DIR,
     CRAWLER_MAX_WORKERS,
@@ -20,8 +20,7 @@ from zaimanhua.core.crawler_runtime import (
 
 ctk.set_appearance_mode("System")
 ctk.set_default_color_theme("blue")
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-warnings.filterwarnings("ignore", category=DeprecationWarning)
+configure_runtime_warnings()
 
 CONFIG_FILE = os.path.join(SCRIPT_DIR, "config.json")
 LIBRARY_CACHE_FILE = os.path.join(SCRIPT_DIR, "library_cache.json")
