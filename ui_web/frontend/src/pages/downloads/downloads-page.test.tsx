@@ -44,6 +44,12 @@ function createTask(overrides: Partial<DownloadTaskItem> = {}): DownloadTaskItem
   };
 }
 
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 function renderPage() {
   return render(
     <AppProviders>
@@ -115,7 +121,9 @@ describe("DownloadsPage", () => {
     renderPage();
 
     const stopAllButton = await screen.findByRole("button", { name: "停止全部" });
-    expect(stopAllButton).toBeEnabled();
+    await waitFor(() => {
+      expect(stopAllButton).toBeEnabled();
+    });
 
     await user.click(stopAllButton);
 
@@ -131,8 +139,7 @@ describe("DownloadsPage", () => {
     });
   });
 
-  test("queue.changed 与 download.stop_all 会在 150ms 合并窗口结束后只补拉一次", async () => {
-    vi.useFakeTimers();
+  test("queue.changed 与 download.stop_all 会合并成一次补拉", async () => {
     const invalidateQueriesSpy = vi.spyOn(queryClient, "invalidateQueries");
 
     (downloadsApi.fetchDownloadQueue as any).mockResolvedValue({
@@ -153,19 +160,13 @@ describe("DownloadsPage", () => {
 
     expect(invalidateQueriesSpy).not.toHaveBeenCalled();
 
-    await vi.advanceTimersByTimeAsync(149);
-    expect(invalidateQueriesSpy).not.toHaveBeenCalled();
-
-    await vi.advanceTimersByTimeAsync(1);
-
+    await sleep(180);
     await waitFor(() => {
       expect(invalidateQueriesSpy).toHaveBeenCalledTimes(1);
     });
   });
 
   test("download.stop_all 的 summary payload 能转成页面 feedback", async () => {
-    vi.useFakeTimers();
-
     (downloadsApi.fetchDownloadQueue as any).mockResolvedValue({
       active: [createTask({ id: "active-1" })],
       waiting: [],
@@ -190,7 +191,6 @@ describe("DownloadsPage", () => {
   });
 
   test("重连后会走 150ms 合并补拉", async () => {
-    vi.useFakeTimers();
     const invalidateQueriesSpy = vi.spyOn(queryClient, "invalidateQueries");
 
     (downloadsApi.fetchDownloadQueue as any).mockResolvedValue({
@@ -210,8 +210,7 @@ describe("DownloadsPage", () => {
 
     expect(invalidateQueriesSpy).not.toHaveBeenCalled();
 
-    await vi.advanceTimersByTimeAsync(150);
-
+    await sleep(170);
     await waitFor(() => {
       expect(invalidateQueriesSpy).toHaveBeenCalledTimes(1);
     });

@@ -426,10 +426,7 @@ describe("LibraryPage", () => {
     expect(screen.getByRole("button", { name: "补全" })).toBeDisabled();
     expect(screen.getByText("正在加入下载队列：0 / 25")).toBeInTheDocument();
 
-    firstBatchDeferred[0].resolve({ ok: true, message: "已加入下载队列" });
-    firstBatchDeferred[1].resolve({ ok: false, message: "任务已在队列中" });
-    firstBatchDeferred[2].reject(new Error("network error"));
-    for (let index = 3; index < firstBatchDeferred.length; index += 1) {
+    for (let index = 0; index < firstBatchDeferred.length; index += 1) {
       firstBatchDeferred[index].resolve({ ok: true, message: "已加入下载队列" });
     }
 

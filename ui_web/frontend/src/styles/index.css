@@ -641,6 +641,8 @@ html, body {
 }
 
 .login-form__control-inner {
+  border: none;
+  background: transparent;
   color: var(--text-primary);
 }
 

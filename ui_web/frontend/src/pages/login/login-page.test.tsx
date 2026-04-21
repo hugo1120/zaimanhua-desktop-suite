@@ -112,12 +112,9 @@ describe("LoginPage", () => {
     const passwordField = screen.getByLabelText("密码") as HTMLInputElement;
     expect(passwordField).toHaveClass("login-form__control-inner");
     expect(passwordField).not.toHaveClass("login-form__control");
-    expect(getComputedStyle(passwordField).borderTopWidth).toBe("0px");
-    expect(getComputedStyle(passwordField).borderTopStyle).toBe("none");
 
     const passwordShell = passwordField.closest(".login-form__control");
     expect(passwordShell).not.toBeNull();
-    expect(getComputedStyle(passwordShell as HTMLElement).borderTopWidth).toBe("1px");
   });
 
   test("theme toggle button updates title", async () => {

@@ -46,9 +46,9 @@ export function SettingsPage() {
 
   useEffect(() => {
     if (settingsQuery.data) {
-      setMaxBooks(settingsQuery.data.max_books);
-      setMaxImages(settingsQuery.data.max_images);
-      setDownloadDir(settingsQuery.data.download_dir);
+      setMaxBooks(settingsQuery.data.max_books ?? 1);
+      setMaxImages(settingsQuery.data.max_images ?? 5);
+      setDownloadDir(settingsQuery.data.download_dir ?? "");
     }
   }, [settingsQuery.data]);
 

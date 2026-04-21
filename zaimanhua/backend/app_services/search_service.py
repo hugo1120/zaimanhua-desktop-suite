@@ -54,6 +54,18 @@ class SearchService:
         self._api = api
 
     @staticmethod
+    def _fill_author_from_index(
+        item: SearchResultItem,
+        index_by_id: dict[str, dict[str, str]],
+    ) -> None:
+        if item.author or not item.id:
+            return
+        cached = index_by_id.get(item.id)
+        if cached is None:
+            return
+        item.author = str(cached.get("author") or "")
+
+    @staticmethod
     def _build_item(raw: dict[str, Any], default_source: str = "") -> SearchResultItem:
         return SearchResultItem(
             id=str(raw.get("id") or ""),
@@ -68,9 +80,15 @@ class SearchService:
     def search(self, keyword: str) -> SearchResponse:
         normalized_keyword = str(keyword or "").strip()
         key = normalized_keyword.casefold()
+        local_rows = _load_local_index()
+        index_by_id = {
+            str(row.get("id") or ""): row
+            for row in local_rows
+            if str(row.get("id") or "")
+        }
 
         local_items: list[SearchResultItem] = []
-        for row in _load_local_index():
+        for row in local_rows:
             title = str(row.get("title") or "")
             author = str(row.get("author") or "")
             if key and key not in title.casefold() and key not in author.casefold():
@@ -98,9 +116,11 @@ class SearchService:
                     existing.description = item.description
                 if not existing.status and item.status:
                     existing.status = item.status
+                self._fill_author_from_index(existing, index_by_id)
                 if item.source and item.source not in existing.source.split("+"):
                     existing.source = f"{existing.source}+{item.source}" if existing.source else item.source
                 continue
+            self._fill_author_from_index(item, index_by_id)
             merged_items.append(item)
             merged_by_id[item.id] = item
 

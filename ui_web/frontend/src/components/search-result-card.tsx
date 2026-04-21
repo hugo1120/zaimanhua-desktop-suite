@@ -15,11 +15,12 @@ export function SearchResultCard(props: {
   const detailQuery = useQuery({
     queryKey: ["manga-detail", item.id],
     queryFn: () => fetchMangaDetail(item.id),
-    enabled: !item.cover_url || !item.description || !item.status,
+    enabled: !item.cover_url || !item.description || !item.status || !item.author,
     staleTime: 5 * 60 * 1000,
   });
   const resolvedCover = item.cover_url || detailQuery.data?.cover_url || undefined;
   const resolvedDescription = item.description || detailQuery.data?.description || "";
+  const resolvedAuthor = item.author || detailQuery.data?.author || "";
   const resolvedStatus = item.status || detailQuery.data?.status || "";
   const resolvedSource = item.source.replaceAll("+", " + ");
 
@@ -62,7 +63,7 @@ export function SearchResultCard(props: {
         />
         <div className="poster-card__meta">
           <Text className="poster-card__meta-left" c="dimmed" span>
-            {item.author || "未知作者"}
+            {resolvedAuthor || "未知作者"}
           </Text>
           {resolvedSource ? (
             <Text className="poster-card__meta-right" c="dimmed" span>
