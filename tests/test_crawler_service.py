@@ -44,7 +44,10 @@ def test_crawler_service_keeps_thread_error_message(monkeypatch):
     monkeypatch.setattr(
         service_mod,
         "_create_crawler",
-        lambda callback, stop_event: FailingCrawler(callback=callback, stop_event=stop_event),
+        lambda callback, stop_event, manga_list_file=None: FailingCrawler(
+            callback=callback,
+            stop_event=stop_event,
+        ),
     )
 
     service = service_mod.CrawlerService(event_bus=EventBus(), manga_list_file=str(index_file))
@@ -71,7 +74,10 @@ def test_crawler_service_reports_missing_progress_when_crawler_returns_silently(
     monkeypatch.setattr(
         service_mod,
         "_create_crawler",
-        lambda callback, stop_event: SilentCrawler(callback=callback, stop_event=stop_event),
+        lambda callback, stop_event, manga_list_file=None: SilentCrawler(
+            callback=callback,
+            stop_event=stop_event,
+        ),
     )
 
     service = service_mod.CrawlerService(event_bus=EventBus(), manga_list_file=str(index_file))
@@ -164,4 +170,31 @@ def test_manga_crawler_allows_null_authors_without_counting_as_failure(monkeypat
     assert crawler.request_error_count == 0
     assert any("保存成功" in message for message in messages)
     assert "测试漫画" in index_file.read_text(encoding="utf-8")
+    shutil.rmtree(temp_dir)
+
+
+def test_crawler_service_passes_configured_manga_list_file_to_crawler(monkeypatch):
+    captured_paths: list[str | None] = []
+
+    class CapturingCrawler:
+        def __init__(self, callback=None, stop_event=None, manga_list_file=None):
+            captured_paths.append(manga_list_file)
+            self.callback = callback
+            self.stop_event = stop_event
+
+        def run(self, start_id, end_id):
+            return
+
+    temp_dir = _make_temp_dir("crawler_service_custom_index_path")
+    index_file = temp_dir / "portable" / "manga_list.txt"
+    index_file.parent.mkdir(parents=True, exist_ok=True)
+    index_file.write_text("", encoding="utf-8")
+    monkeypatch.setattr(crawler_mod, "MangaCrawler", CapturingCrawler)
+
+    service = service_mod.CrawlerService(event_bus=EventBus(), manga_list_file=str(index_file))
+    service.start(1, 1)
+
+    _wait_until(lambda: not service.get_status().running)
+
+    assert captured_paths == [str(index_file)]
     shutil.rmtree(temp_dir)

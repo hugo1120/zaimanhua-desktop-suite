@@ -28,7 +28,6 @@ def update_settings(
     new_dir = Path(settings.download_dir)
     if hasattr(container.library_service, "_download_dir"):
         container.library_service._download_dir = new_dir
-    # Update download manager download dir
-    if hasattr(container.download_service, "_manager"):
-        container.download_service._manager.download_dir = str(new_dir)
+    if hasattr(container.download_service, "set_download_dir"):
+        container.download_service.set_download_dir(str(new_dir))
     return settings

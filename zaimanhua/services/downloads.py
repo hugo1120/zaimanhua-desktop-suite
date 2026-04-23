@@ -121,6 +121,12 @@ class DownloadManager:
         self.max_images = int(images)
         print(f'并发设置更新: 书籍={self.max_books}, 图片={self.max_images}')
 
+    def set_download_dir(self, download_dir: str | None):
+        normalized_dir = os.path.abspath(download_dir or DOWNLOAD_DIR)
+        self.download_dir = normalized_dir
+        self._queue_file = _resolve_queue_file(normalized_dir)
+        self._save_queue()
+
     def stop_all_tasks(self):
         self.stop_flag.set()
         with self.state_lock:

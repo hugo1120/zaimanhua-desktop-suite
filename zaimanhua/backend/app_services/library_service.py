@@ -106,8 +106,15 @@ class LibraryService:
         root = Path(__file__).resolve().parents[3]
         self._download_dir = Path(download_dir or root / "downloads")
         self._cache_path = Path(cache_path or root / "library_cache.json")
-        self._manga_index = dict(manga_index or {})
         self._manga_list_file = Path(manga_list_file or root / "manga_list.txt")
+        loaded_index = {
+            str(row.get("id") or ""): row
+            for row in _load_local_index_rows(self._manga_list_file)
+            if str(row.get("id") or "")
+        }
+        if manga_index:
+            loaded_index.update({str(key): value for key, value in manga_index.items() if str(key)})
+        self._manga_index = loaded_index
         self._api = api
 
     def list_library(self, keyword: str | None = None) -> LibraryResponse:

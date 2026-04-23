@@ -4,6 +4,7 @@ import concurrent.futures
 import os
 import threading
 import time
+from pathlib import Path
 
 import requests
 
@@ -13,7 +14,7 @@ from zaimanhua.services.api import CustomSSLAdapter
 class MangaCrawler:
     """内嵌的漫画索引爬虫，用于更新 manga_list.txt"""
 
-    def __init__(self, callback=None, stop_event=None):
+    def __init__(self, callback=None, stop_event=None, manga_list_file: str | None = None):
         self.base_url = 'https://v4api.zaimanhua.com/app/v1'
         self.session = requests.Session()
         self.session.trust_env = False
@@ -28,15 +29,16 @@ class MangaCrawler:
         self.first_request_error = ''
         self.callback = callback
         self.stop_event = stop_event or threading.Event()
+        self.manga_list_file = str(Path(manga_list_file or MANGA_LIST_FILE))
 
     def load_existing_data(self):
         """读取现有 TXT，建立缓存用于去重"""
-        if os.path.exists(MANGA_LIST_FILE):
+        if os.path.exists(self.manga_list_file):
             try:
-                print(f'正在读取现有文件: {MANGA_LIST_FILE} ...')
+                print(f'正在读取现有文件: {self.manga_list_file} ...')
                 if self.callback:
                     self.callback(f'正在读取现有文件...')
-                with open(MANGA_LIST_FILE, 'r', encoding='utf-8') as f:
+                with open(self.manga_list_file, 'r', encoding='utf-8') as f:
                     for line in f:
                         line = line.strip()
                         if not line:
@@ -106,7 +108,7 @@ class MangaCrawler:
         """保存数据到 TXT"""
         if not self.new_data:
             return
-        print(f'正在保存数据到 {MANGA_LIST_FILE}...')
+        print(f'正在保存数据到 {self.manga_list_file}...')
         if self.callback:
             self.callback('正在保存数据...')
         try:
@@ -114,7 +116,7 @@ class MangaCrawler:
             for item in self.new_data:
                 all_data[item['ID']] = {'title': item['Title'], 'author': item['Author']}
             sorted_ids = sorted(all_data.keys())
-            with open(MANGA_LIST_FILE, 'w', encoding='utf-8') as f:
+            with open(self.manga_list_file, 'w', encoding='utf-8') as f:
                 for mid in sorted_ids:
                     info = all_data[mid]
                     f.write(f"{mid} | {info['title']} | {info['author']}\n")

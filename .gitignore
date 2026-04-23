@@ -20,26 +20,34 @@ env/
 ui_web/frontend/node_modules/
 ui_web/frontend/dist/
 ui_web/frontend/dist_manual*/
+/.vite/
 *.tsbuildinfo
 
 # Build artifacts
-build/
-dist/
-build_manual_pkg*/
-dist_manual_pkg/
+/build/
+/dist/
+/build_manual_pkg*/
+/dist_manual_pkg/
 *.egg-info/
-备份/
+/备份/
+
+# Research / debug artifacts
+/debug/
+/fix/
+/autoresearch-results/
 
 # Logs and temp files
 *.log
-.test_tmp/
+/desktop_debug.log
+/.test_tmp/
 pytest-cache-files-*/
-cache/
-temp/
-downloads/
+/cache/
+/temp/
+/downloads/
 
 # OS / IDE
 .DS_Store
 Thumbs.db
 .idea/
 .vscode/
+*.lnk

@@ -13,10 +13,18 @@ from zaimanhua.backend.schemas.common import OperationResponse
 from zaimanhua.core.desktop_debug import desktop_log
 
 
-def _create_crawler(callback: Any, stop_event: threading.Event) -> Any:
+def _create_crawler(
+    callback: Any,
+    stop_event: threading.Event,
+    manga_list_file: str | Path | None = None,
+) -> Any:
     from zaimanhua.services.crawler import MangaCrawler
 
-    return MangaCrawler(callback=callback, stop_event=stop_event)
+    return MangaCrawler(
+        callback=callback,
+        stop_event=stop_event,
+        manga_list_file=str(manga_list_file) if manga_list_file is not None else None,
+    )
 
 
 class CrawlerService:
@@ -67,7 +75,11 @@ class CrawlerService:
             self._stop_event = threading.Event()
             self._last_message = f"启动 {start_id}-{end_id}"
             desktop_log("backend.crawler", "start_requested", start_id=start_id, end_id=end_id)
-            crawler = _create_crawler(self._on_progress, self._stop_event)
+            crawler = _create_crawler(
+                self._on_progress,
+                self._stop_event,
+                self._manga_list_file,
+            )
             self._thread = threading.Thread(
                 target=self._run_crawler, args=(crawler, start_id, end_id), daemon=True
             )

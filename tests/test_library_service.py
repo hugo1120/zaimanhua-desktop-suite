@@ -363,3 +363,29 @@ def test_smart_update_candidates_never_discovers_cover_from_cache_path(monkeypat
         assert response.ok is True
         assert response.candidate_total == 1
         assert [item.id for item in response.items] == ["100"]
+
+
+def test_library_service_backfills_author_from_manga_list_file():
+    with _temp_dir("library_author_backfill_from_index") as temp_dir:
+        download_dir = temp_dir / "downloads"
+        cache_path = temp_dir / "library_cache.json"
+        manga_list_path = temp_dir / "manga_list.txt"
+        folder = download_dir / "book_1"
+        folder.mkdir(parents=True, exist_ok=True)
+        manga_list_path.write_text("100|索引标题|索引作者\n", encoding="utf-8")
+        (folder / "info.json").write_text(
+            json.dumps({"id": "100", "title": "本地标题", "author": ""}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        service = LibraryService(
+            download_dir=str(download_dir),
+            cache_path=str(cache_path),
+            manga_list_file=str(manga_list_path),
+            api=FakeApi(),
+        )
+
+        response = service.refresh_library()
+
+        assert response.total == 1
+        assert response.items[0].author == "索引作者"

@@ -110,6 +110,10 @@ class DownloadService:
     def apply_settings(self, settings: Any) -> None:
         self._manager.set_concurrency(int(settings.max_books), int(settings.max_images))
 
+    def set_download_dir(self, download_dir: str) -> None:
+        if hasattr(self._manager, "set_download_dir"):
+            self._manager.set_download_dir(download_dir)
+
     def close(self) -> None:
         if hasattr(self._manager, "close"):
             self._manager.close()

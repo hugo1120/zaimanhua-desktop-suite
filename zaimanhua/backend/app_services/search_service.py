@@ -8,6 +8,7 @@ from zaimanhua.backend.schemas.search import SearchResponse, SearchResultItem
 
 
 _LOCAL_INDEX_CACHE: list[dict[str, str]] | None = None
+_LOCAL_INDEX_CACHE_KEY: tuple[str, int] | None = None
 
 
 def _default_index_path() -> Path:
@@ -15,14 +16,21 @@ def _default_index_path() -> Path:
 
 
 def _load_local_index() -> list[dict[str, str]]:
-    global _LOCAL_INDEX_CACHE
-    if _LOCAL_INDEX_CACHE is not None:
-        return _LOCAL_INDEX_CACHE
+    global _LOCAL_INDEX_CACHE, _LOCAL_INDEX_CACHE_KEY
 
     index_path = _default_index_path()
+    if index_path.exists():
+        cache_key = (str(index_path.resolve()), int(index_path.stat().st_mtime_ns))
+    else:
+        cache_key = (str(index_path.resolve()), -1)
+
+    if _LOCAL_INDEX_CACHE is not None and _LOCAL_INDEX_CACHE_KEY == cache_key:
+        return _LOCAL_INDEX_CACHE
+
     rows: list[dict[str, str]] = []
     if not index_path.exists():
         _LOCAL_INDEX_CACHE = rows
+        _LOCAL_INDEX_CACHE_KEY = cache_key
         return rows
 
     for line in index_path.read_text(encoding="utf-8", errors="ignore").splitlines():
@@ -46,6 +54,7 @@ def _load_local_index() -> list[dict[str, str]]:
         )
 
     _LOCAL_INDEX_CACHE = rows
+    _LOCAL_INDEX_CACHE_KEY = cache_key
     return rows
 
 
