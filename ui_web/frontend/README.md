@@ -2,13 +2,7 @@
 
 ## 本机开发启动
 
-推荐在仓库根目录先执行：
-
-```powershell
-./start_webui_dev.bat
-```
-
-`start_webui_dev.bat` 会在 backend `8001-8010`、frontend `5173-5182` 中选空闲端口，所选端口会写入根目录的 `.webui_ports`，可以配合 `./restart_webui_dev.bat` 与 `./stop_webui_dev.bat` 使用来重启或停止开发环境。
+当前桌面套件仓库没有 WebUI 启停辅助脚本，开发态使用手动命令启动 backend 和 frontend。
 
 ### 1. 启动 backend
 
@@ -83,17 +77,13 @@ http://127.0.0.1:5176
 
 ## 自动验证
 
-推荐优先在仓库根目录执行：
+在仓库根目录按顺序执行：
 
 ```powershell
-./run_webui_validation.bat
+python -m pytest -q
+npm --prefix "ui_web/frontend" run test -- run
+npm --prefix "ui_web/frontend" run build
 ```
-
-它会按顺序执行：
-
-1. `python -m pytest -q`
-2. `cd "ui_web/frontend"; npm test -- --run`
-3. `cd "ui_web/frontend"; npm run build`
 
 如果 frontend Vitest 在受限终端报 `spawn EPERM`，请改到正常本机终端补跑该命令，并在任务结论中写明结果。
 
@@ -128,7 +118,7 @@ http://127.0.0.1:5176
 
 ## 结束时怎么收尾
 
-优先在仓库根目录执行 `./stop_webui_dev.bat`。如果是手动启动的 backend/frontend，各自在对应终端停止运行，并按实际使用端口检查端口释放：
+各自在对应终端停止手动启动的 backend/frontend，并按实际使用端口检查端口释放：
 
 ```powershell
 netstat -ano | Select-String ":8001|:8002"
